@@ -43,6 +43,10 @@
 /* Un sélecteur d'identifiant avec display:flex l'emporte sur l'attribut hidden :
    sans ce !important, masquer un bloc par « hidden » ne fait rien du tout. */
 [hidden]{display:none!important}
+.jauge-memoire{margin-top:14px;padding:12px 14px;border-radius:var(--r);
+  background:#FFF5E6;color:#8A5A12;font-size:13px;line-height:1.45}
+.jauge-memoire b{display:block;margin-bottom:3px}
+.jauge-memoire.chaude{background:#F6E2DE;color:#8E2C1F}
 html,body{margin:0;height:100%}
 body{
   font-family:Archivo,-apple-system,system-ui,"Segoe UI",sans-serif;
@@ -533,8 +537,26 @@ function getPhoto(id){return new Promise((ok,ko)=>{const t=db.transaction("photo
 function delPhoto(id){return new Promise(ok=>{const t=db.transaction("photos","readwrite");
   t.objectStore("photos").delete(id);t.oncomplete=ok;});}
 
-const S={get:k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},
-         set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+/* localStorage est petit — environ 5 Mo sur iOS — et ce sont les signatures qui
+   le remplissent : 17 Ko chacune, deux par rapport, soit 97 % du poids d'un
+   dossier. Sans garde-fou, un technicien sature vers 145 rapports et l'app
+   cesse d'enregistrer sans rien dire. On rattrape, on allège, on prévient. */
+const S={
+  get:k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},
+  set:(k,v)=>{
+    try{localStorage.setItem(k,JSON.stringify(v));return true}
+    catch(e){
+      if(allegerUrgence()){
+        try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e2){}
+      }
+      toast("Mémoire pleine — envoie tes rapports en attente");
+      return false;
+    }
+  }
+};
+const poidsStockage=()=>{let n=0;try{for(const k in localStorage)
+  if(Object.prototype.hasOwnProperty.call(localStorage,k))n+=k.length+localStorage[k].length;
+}catch(e){}return n*2;};
 
 let dossiers=S.get("dossiers")||[];
 let auteur=S.get("auteur")||"";
@@ -566,6 +588,16 @@ function rendreAccueil(){
     brouillons.forEach(d=>h+=carte(d));}
   if(envoyes.length){h+='<div class="titre-sec">Envoyés</div>';envoyes.forEach(d=>h+=carte(d));}
   if(!brouillons.length&&!envoyes.length)h='<div class="vide">Aucun dossier.<br>Commencez par un relevé ou une intervention.</div>';
+  /* La mémoire ne se voit pas tant qu'elle n'est pas pleine. On la montre
+     seulement quand elle commence à compter, pour ne pas inquiéter pour rien. */
+  const pleine=poidsStockage()/(5*1024*1024);
+  if(pleine>.6){
+    const pct=Math.round(pleine*100);
+    h+=`<div class="jauge-memoire${pleine>.85?" chaude":""}">`
+      +`<b>Mémoire du téléphone : ${pct} %</b>`
+      +`<span>Les rapports envoyés s'effacent tout seuls avec le temps. `
+      +`S'il en reste à envoyer, fais-le maintenant.</span></div>`;
+  }
   l.innerHTML=h;
   montrer("e-accueil");
 }
@@ -1306,15 +1338,62 @@ async function envoyerDepuisTelephone(){
 }
 
 /* ═══════════ Ménage : un téléphone n'est pas un serveur d'archives ═══════════ */
-async function menage(jours=60){
-  const limite=Date.now()-jours*86400000;let n=0;
-  for(const d of dossiers.filter(x=>x.etat==="envoye")){
-    const [j,m,a]=(d.date||"").split("/");
-    if(!a||new Date(+a,+m-1,+j).getTime()>limite)continue;
-    for(const s of d.salles||[])for(const id of toutesPhotos(s)){await delPhoto(id);n++}
-    (d.salles||[]).forEach(s=>{s.photos=[];s.guidees={}}); d.allege=true;
+const JOURS_PHOTOS=60;    /* au-delà, les photos ne servent plus : le PDF est parti */
+const JOURS_SIGNATURES=30; /* elles pèsent 97 % du dossier et vivent dans le PDF */
+const GARDE_ENVOYES=30;    /* l'accueil n'en montre que 6 ; en garder 30 est déjà large */
+
+const quandEnvoye=d=>{const [j,m,a]=(d.date||"").split("/");
+  return a?new Date(+a,+m-1,+j).getTime():0;};
+
+async function menage(){
+  const envoyes=dossiers.filter(x=>x.etat==="envoye");
+  const now=Date.now();
+  let photos=0,sigs=0,jetes=0;
+
+  for(const d of envoyes){
+    const t0=quandEnvoye(d);
+    if(!t0)continue;
+    if(now-t0>JOURS_PHOTOS*86400000 && !d.allege){
+      for(const s of d.salles||[])for(const id of toutesPhotos(s)){await delPhoto(id);photos++}
+      (d.salles||[]).forEach(s=>{s.photos=[];s.guidees={}}); d.allege=true;
+    }
+    if(now-t0>JOURS_SIGNATURES*86400000 && (d.signTech||d.signClient)){
+      d.signTech="";d.signClient="";sigs++;
+    }
   }
-  if(n){sauver();console.log("ménage :",n,"photos libérées")}
+
+  /* Au-delà du plafond, les plus anciens partent pour de bon. Le rapport, lui,
+     est chez le client depuis longtemps. */
+  if(envoyes.length>GARDE_ENVOYES){
+    const tries=envoyes.slice().sort((a,b)=>quandEnvoye(a)-quandEnvoye(b));
+    for(const d of tries.slice(0,envoyes.length-GARDE_ENVOYES)){
+      for(const s of d.salles||[])for(const id of toutesPhotos(s))await delPhoto(id);
+      const i=dossiers.indexOf(d); if(i>=0){dossiers.splice(i,1);jetes++}
+    }
+  }
+
+  if(photos||sigs||jetes){
+    sauver();
+    console.log(`ménage : ${photos} photos, ${sigs} signatures, ${jetes} dossiers`);
+  }
+}
+
+/* Appelé quand l'écriture a échoué : on reprend de la place tout de suite,
+   sans attendre les délais. Le dossier en cours n'est jamais touché. */
+function allegerUrgence(){
+  let gagne=false;
+  for(const d of dossiers){
+    if(d.etat!=="envoye"||d===courant)continue;
+    if(d.signTech||d.signClient){d.signTech="";d.signClient="";gagne=true}
+  }
+  if(!gagne){
+    const envoyes=dossiers.filter(d=>d.etat==="envoye"&&d!==courant)
+      .sort((a,b)=>quandEnvoye(a)-quandEnvoye(b));
+    for(const d of envoyes.slice(0,Math.ceil(envoyes.length/2))){
+      const i=dossiers.indexOf(d); if(i>=0){dossiers.splice(i,1);gagne=true}
+    }
+  }
+  return gagne;
 }
 
 /* ═══════════ Réseau ═══════════ */
