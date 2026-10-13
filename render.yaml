@@ -1,0 +1,19 @@
+# Blueprint Render : tout le service est décrit ici, il n'y a aucun formulaire
+# à remplir ni aucune variable à saisir.
+#
+#   Render → New → Blueprint → choisir le dépôt « chantiers » → Apply
+#
+# Région Francfort : c'est la plus proche de la France. Le service ne stocke
+# rien, mais autant que ce qui transite reste dans l'Union.
+services:
+  - type: web
+    name: releves-chantier
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /ping
+    autoDeploy: true
+    # Aucune clé, aucun identifiant : c'est la raison d'être de ce service.
+    envVars: []
