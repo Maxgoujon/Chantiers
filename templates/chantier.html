@@ -1336,7 +1336,10 @@ function bandeauInstallation(){
 }
 ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();
   if(!auteur)setTimeout(()=>document.getElementById("auteur").focus(),300);});
-if("serviceWorker" in navigator)navigator.serviceWorker.register("/static/chantier-sw.js").catch(()=>{});
+/* Depuis la racine, et pas depuis /static/ : la portée d'un worker est le
+   dossier d'où il est servi, et /static/ ne couvre pas /chantier. */
+if("serviceWorker" in navigator)
+  navigator.serviceWorker.register("/chantier-sw.js",{scope:"/"}).catch(()=>{});
 </script>
 </body>
 </html>

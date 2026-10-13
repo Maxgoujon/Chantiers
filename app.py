@@ -14,7 +14,7 @@ clients ne touche ce serveur — ce qui évite aussi d'en devenir sous-traitant 
 sens du RGPD.
 """
 import os
-from flask import Flask, render_template, redirect
+from flask import Flask, render_template, redirect, send_from_directory
 
 app = Flask(__name__)
 
@@ -48,6 +48,21 @@ def ping():
 @app.route("/chantier")
 def chantier():
     return render_template("chantier.html")
+
+
+@app.route("/chantier-sw.js")
+def service_worker():
+    """Le worker DOIT être servi depuis la racine.
+
+    Un service worker ne contrôle que les pages situées sous le dossier d'où il
+    est servi. Depuis /static/ il ne couvrait que /static/ : il s'enregistrait
+    sans erreur, et ne prenait jamais la main sur /chantier. L'application
+    paraissait installée et ne fonctionnait pas hors ligne.
+    """
+    r = send_from_directory("static", "chantier-sw.js", mimetype="application/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    r.headers["Service-Worker-Allowed"] = "/"
+    return r
 
 
 if __name__ == "__main__":
