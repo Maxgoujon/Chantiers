@@ -1,0 +1,23 @@
+{
+  "name": "Chantiers",
+  "short_name": "Chantiers",
+  "description": "Relevés de site et comptes rendus d'intervention",
+  "start_url": "/chantier",
+  "scope": "/chantier",
+  "display": "standalone",
+  "background_color": "#E9ECEE",
+  "theme_color": "#0E1418",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Chantiers</title>
+<link rel="manifest" href="/static/chantier-manifest.json">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* ══════════════════════════════════════════════════════════════════
+   Un instrument de terrain. Lisible en plein soleil comme dans un
+   local technique : contraste fort, hiérarchie nette, aucune décoration.
+   Les couleurs ne portent aucune marque — l'outil est en marque blanche.
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --ink:#0E1418;        /* le noir de l'encre, légèrement bleuté */
+  --ink-2:#39444C;
+  --gris:#6A757D;
+  --faint:#9AA4AB;
+  --ligne:#D6DBDF;
+  --line-soft:#E9EDEF;
+  --ground:#E9ECEE;     /* le fond, un gris froid choisi et non hérité */
+  --surface:#FFFFFF;
+  --sunk:#DFE4E7;
+  --signal:#0F5A6B;     /* pétrole : structure, liens, états actifs */
+  --signal-wash:#E2EFF2;
+  --ok:#1C6B4B;
+  --ok-wash:#E4F1EA;
+  --alerte:#B23C17;
+  --alerte-wash:#FBEDE7;
+  --attente-wash:#FBF0D9;
+  --attente:#8A5A00;
+  --r:6px;              /* un seul rayon, discret */
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --large:540px;        /* l'app reste centrée, elle ne s'étale pas */
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* Un sélecteur d'identifiant avec display:flex l'emporte sur l'attribut hidden :
+   sans ce !important, masquer un bloc par « hidden » ne fait rien du tout. */
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{
+  font-family:Archivo,-apple-system,system-ui,"Segoe UI",sans-serif;
+  background:var(--ground);color:var(--ink);
+  font-size:16px;line-height:1.45;overscroll-behavior-y:none;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+.ecran{display:none;min-height:100%;flex-direction:column}
+.ecran.actif{display:flex}
+
+/* ─────────── chrome ─────────── */
+header{
+  background:var(--ink);color:#fff;position:sticky;top:0;z-index:10;
+  padding:calc(env(safe-area-inset-top,0px) + 15px) 20px 15px;
+}
+header>div.dedans{max-width:var(--large);margin:0 auto;display:flex;align-items:center;gap:14px}
+header h1{
+  font-size:19px;margin:0;font-weight:600;flex:1;line-height:1.15;letter-spacing:-.01em;
+}
+header .sous{
+  display:block;font-size:12.5px;font-weight:400;letter-spacing:.02em;
+  color:rgba(255,255,255,.62);margin-top:2px;
+}
+.retour{
+  background:none;border:0;color:#fff;font-size:28px;line-height:1;padding:0 4px 0 0;
+  cursor:pointer;opacity:.9;margin-left:-4px;
+}
+.reseau{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;padding:4px 8px;border-radius:3px;
+  background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);
+}
+.reseau.off{background:var(--alerte);color:#fff}
+
+main{flex:1;padding:20px 20px calc(110px + var(--safe-b))}
+main>*{max-width:var(--large);margin-left:auto;margin-right:auto}
+
+/* ─────────── blocs ─────────── */
+.bloc{
+  background:var(--surface);border:1px solid var(--ligne);border-radius:var(--r);
+  padding:16px;margin-bottom:12px;
+}
+.titre-sec{
+  font-size:11.5px;font-weight:700;color:var(--gris);text-transform:uppercase;
+  letter-spacing:.11em;margin:26px 0 10px;display:flex;align-items:center;gap:12px;
+}
+.titre-sec::after{content:"";flex:1;height:1px;background:var(--ligne)}
+.titre-sec:first-child{margin-top:0}
+
+label{
+  display:block;font-size:11.5px;font-weight:700;color:var(--gris);margin:0 0 7px;
+  text-transform:uppercase;letter-spacing:.09em;
+}
+/* Les cases et les boutons radio sont exclus : leur appliquer appearance:none
+   supprime la coche elle-même, et l'utilisateur tape sans rien voir changer. */
+input:not([type=checkbox]):not([type=radio]),textarea,select{
+  width:100%;font:inherit;font-size:17px;padding:13px 14px;
+  border:1px solid var(--ligne);border-radius:var(--r);background:var(--surface);
+  color:var(--ink);-webkit-appearance:none;transition:border-color .12s,box-shadow .12s;
+}
+input[type=checkbox]{
+  -webkit-appearance:checkbox;appearance:checkbox;
+  width:23px;height:23px;flex:none;margin:0;padding:0;border:0;
+  accent-color:var(--ok);
+}
+input::placeholder,textarea::placeholder{color:var(--faint)}
+input:not([type=checkbox]):focus,textarea:focus{
+  outline:0;border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-wash);
+}
+textarea{min-height:96px;resize:vertical;line-height:1.5}
+.champ+.champ{margin-top:16px}
+.trio{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.trio label{margin-bottom:5px}
+
+/* ─────────── boutons ─────────── */
+button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
+.gros{
+  width:100%;padding:17px;font-size:17px;font-weight:600;letter-spacing:-.005em;
+  background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;gap:9px;
+}
+.gros:active{opacity:.86}
+.gros.sombre{background:var(--surface);color:var(--ink);border:1.5px solid var(--ink)}
+.gros.vert{background:var(--ok)}
+.gros:disabled{opacity:.4}
+.gros+.gros{margin-top:10px}
+.secondaire{
+  width:100%;padding:14px;background:transparent;color:var(--ink);
+  border:1px solid var(--ligne);font-weight:600;font-size:15.5px;
+}
+.secondaire:active{background:var(--sunk)}
+.lien{background:none;color:var(--gris);padding:12px;font-size:14.5px;width:100%;
+  text-decoration:underline;text-underline-offset:3px}
+
+.barre{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;
+  padding:12px 20px calc(12px + var(--safe-b));
+  background:rgba(233,236,238,.93);backdrop-filter:blur(10px);
+  border-top:1px solid var(--ligne);
+}
+.barre>*{max-width:var(--large);margin-left:auto;margin-right:auto;display:block}
+
+/* ─────────── listes ─────────── */
+.carte{
+  background:var(--surface);border:1px solid var(--ligne);border-radius:var(--r);
+  padding:15px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px;
+  text-align:left;width:100%;
+}
+.carte:active{background:var(--surface-2,#f7f9fa)}
+.carte .t{flex:1;min-width:0}
+.carte .t b{display:block;font-size:16px;font-weight:600;letter-spacing:-.005em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.carte .t small{color:var(--gris);font-size:13px;display:block;margin-top:2px}
+.carte .fl{color:var(--faint);font-size:20px;flex:none}
+.pastille{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.07em;padding:4px 8px;border-radius:3px;
+  background:var(--sunk);color:var(--gris);white-space:nowrap;
+}
+.pastille.att{background:var(--attente-wash);color:var(--attente)}
+.pastille.ok{background:var(--ok-wash);color:var(--ok)}
+.vide{text-align:center;color:var(--gris);padding:40px 16px;font-size:15px;line-height:1.6}
+
+/* ─────────── photos ─────────── */
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:12px}
+.vignette{position:relative;aspect-ratio:1;border-radius:var(--r);overflow:hidden;background:var(--sunk)}
+.vignette img{width:100%;height:100%;object-fit:cover;display:block}
+.vignette button{
+  position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;
+  background:rgba(14,20,24,.7);color:#fff;font-size:15px;line-height:26px;padding:0;text-align:center;
+}
+.ajout-photo{
+  border:1.5px dashed var(--ligne);border-radius:var(--r);background:transparent;
+  color:var(--ink);display:flex;align-items:center;justify-content:center;gap:10px;
+  font-size:15.5px;font-weight:600;width:100%;padding:16px;
+  text-transform:none;letter-spacing:0;margin:0;cursor:pointer;
+}
+.ajout-photo:active{background:var(--sunk)}
+
+/* ─────────── photos guidées ─────────── */
+.guidee{display:flex;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line-soft)}
+.guidee:last-child{border-bottom:0}
+.guidee .num{
+  width:27px;height:27px;border-radius:50%;background:var(--sunk);color:var(--gris);
+  display:grid;place-items:center;font-size:13px;font-weight:700;flex:none;
+  font-family:"IBM Plex Mono",monospace;
+}
+.guidee.faite .num{background:var(--ok);color:#fff}
+.guidee .txt{flex:1;font-size:15px;line-height:1.3;font-weight:500}
+.guidee .txt small{display:block;color:var(--gris);font-size:12.5px;font-weight:400;margin-top:2px}
+.guidee label.prendre{text-transform:none;letter-spacing:0;
+  background:var(--ink);color:#fff;border:0;border-radius:var(--r);
+  padding:10px 15px;font-size:14px;font-weight:600;flex:none;cursor:pointer;
+  text-transform:none;letter-spacing:0;margin:0;
+}
+.guidee img{width:56px;height:56px;object-fit:cover;border-radius:var(--r);flex:none}
+.guidee .refaire{background:none;color:var(--gris);font-size:13px;text-decoration:underline;
+  text-underline-offset:3px;padding:4px;flex:none}
+
+/* ─────────── note du client ─────────── */
+/* Des cibles de 44 px : on tape dessus avec un gant, debout dans un couloir. */
+.etoiles{display:flex;gap:6px}
+.etoiles button{
+  flex:1;height:52px;padding:0;background:var(--surface);
+  border:1px solid var(--ligne);border-radius:var(--r);
+  font-size:26px;line-height:1;color:var(--faint);
+  text-transform:none;letter-spacing:0;transition:color .12s,border-color .12s;
+}
+.etoiles button.pleine{color:#C8901A;border-color:#C8901A}
+
+/* ─────────── matériels fournis ─────────── */
+.mat{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.mat>b{flex:0 0 58px;font-size:14px;font-weight:600}
+.mat select{flex:1;min-width:0}
+.mat input{flex:0 0 76px;min-width:0;text-align:center}
+
+/* ─────────── signatures ─────────── */
+.pad{
+  border:1px solid var(--ligne);border-radius:var(--r);background:var(--surface);
+  height:175px;position:relative;touch-action:none;
+}
+.pad canvas{width:100%;height:100%;display:block;border-radius:var(--r)}
+.pad::after{
+  content:"Signer ici";position:absolute;inset:0;display:grid;place-items:center;
+  color:var(--faint);font-size:15px;pointer-events:none;
+}
+.pad.signe::after{display:none}
+.pad.signe{border-color:var(--ok)}
+.pad-actions{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+
+/* ─────────── puces, cases ─────────── */
+.puces{display:flex;flex-wrap:wrap;gap:8px}
+.puce{
+  padding:11px 15px;border:1px solid var(--ligne);border-radius:var(--r);background:var(--surface);
+  font-size:15px;color:var(--ink-2);cursor:pointer;font-weight:500;
+}
+.puce.on{background:var(--ink);border-color:var(--ink);color:#fff}
+/* .ctrl est un <label> : sans cette remise à zéro il hérite des petites
+   capitales des intitulés de champ et chaque ligne passe sur deux. */
+.ctrl{
+  display:flex;gap:14px;align-items:center;padding:13px 0;cursor:pointer;
+  font-size:16px;font-weight:400;color:var(--ink);
+  text-transform:none;letter-spacing:0;margin:0;
+  border-bottom:1px solid var(--line-soft);
+}
+.ctrl:last-child{border-bottom:0}
+.ctrl input{accent-color:var(--ok)}
+.coche{
+  display:flex;gap:14px;align-items:flex-start;font-size:16px;font-weight:400;
+  color:var(--ink);text-transform:none;letter-spacing:0;cursor:pointer;
+}
+.coche input{margin-top:1px;accent-color:var(--signal)}
+.coche small{color:var(--gris);font-size:13px}
+
+/* ─────────── surcouches ─────────── */
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%) translateY(10px);
+  width:calc(100% - 40px);max-width:var(--large);
+  bottom:calc(122px + var(--safe-b));background:var(--ink);color:#fff;
+  padding:14px 17px;border-radius:var(--r);font-size:15px;opacity:0;
+  transition:opacity .18s,transform .18s;pointer-events:none;z-index:50;
+}
+#toast.vu{opacity:1;transform:translateX(-50%) translateY(0)}
+#installer{
+  position:fixed;left:50%;transform:translateX(-50%);
+  width:calc(100% - 32px);max-width:var(--large);
+  bottom:calc(140px + var(--safe-b));z-index:60;
+  background:var(--ink);color:#fff;border-radius:var(--r);padding:16px 18px;font-size:14px;
+  display:flex;flex-direction:column;gap:7px;box-shadow:0 10px 34px rgba(14,20,24,.28);
+}
+#installer b{font-size:15px}
+#installer span{color:rgba(255,255,255,.76);line-height:1.4}
+#installer button{
+  align-self:flex-end;background:#fff;color:var(--ink);padding:10px 18px;font-weight:600;
+}
+</style>
+</head>
+<body>
+
+<!-- ─────────── ACCUEIL ─────────── -->
+<div class="ecran actif" id="e-accueil">
+  <header>
+    <div class="dedans">
+      <h1>Chantiers<span class="sous" id="nom-auteur"></span></h1>
+      <span class="reseau" id="reseau">en ligne</span>
+    </div>
+  </header>
+  <main>
+    <div class="bloc" id="bloc-nom" hidden>
+      <div class="champ">
+        <label for="auteur">Votre nom</label>
+        <input id="auteur" placeholder="Michael Deslandres" autocomplete="name">
+      </div>
+      <button class="gros" style="margin-top:12px" onclick="enregistrerNom()">Commencer</button>
+    </div>
+
+    <div id="bloc-actions" hidden>
+      <button class="gros" onclick="nouveau('releve')">Nouveau relevé de site</button>
+      <button class="gros sombre" onclick="nouveau('intervention')">Compte rendu d'intervention</button>
+
+      <div id="liste-dossiers"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ─────────── DOSSIER : relevé ou intervention, même écran ─────────── -->
+<div class="ecran" id="e-releve">
+  <header>
+    <div class="dedans">
+      <button class="retour" onclick="allerAccueil()">‹</button>
+      <h1 id="titre-releve">Relevé<span class="sous" id="sous-releve"></span></h1>
+    </div>
+  </header>
+  <main>
+    <div class="bloc">
+      <div class="champ"><label for="r-chantier">Chantier</label>
+        <input id="r-chantier" placeholder="Tour Trinity — 12e étage" oninput="majDossier()"></div>
+      <div class="champ"><label for="r-client">Société <span id="lbl-societe"></span></label>
+        <input id="r-client" placeholder="Nom de la société" oninput="majDossier()"></div>
+      <div class="champ" id="champ-adresse"><label for="r-adresse">Adresse</label>
+        <input id="r-adresse" placeholder="Adresse du site" oninput="majDossier()"></div>
+      <div class="champ" id="champ-contact" hidden><label for="r-contact">Contact sur place</label>
+        <input id="r-contact" placeholder="Nom, téléphone ou mail" oninput="majDossier()"></div>
+      <div class="champ" id="champ-techs" hidden><label for="r-techs">Intervenants</label>
+        <input id="r-techs" placeholder="Séparés par une virgule" oninput="majDossier()"></div>
+    </div>
+
+    <div id="bloc-type" hidden>
+      <div class="bloc">
+        <label>Type d'intervention</label>
+        <div class="puces" id="puces-type"></div>
+        <div class="trio" style="margin-top:14px">
+          <div><label for="i-arrivee" style="font-size:11.5px">Arrivée</label>
+            <input id="i-arrivee" type="time" oninput="majDossier()"></div>
+          <div><label for="i-depart" style="font-size:11.5px">Départ</label>
+            <input id="i-depart" type="time" oninput="majDossier()"></div>
+          <div><label style="font-size:11.5px">Durée</label>
+            <input id="i-duree-calc" readonly style="background:var(--fond);color:var(--gris)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="titre-sec" id="titre-salles">Salles</div>
+    <div id="liste-salles"></div>
+    <button class="secondaire" onclick="nouvelleSalle()">+ Ajouter une salle</button>
+
+    <button class="secondaire" id="btn-photos" style="margin-top:10px" onclick="recupererPhotos()"
+            hidden>Récupérer les photos sur le téléphone</button>
+
+    <!-- intervention seulement : ce qui vaut pour la journée entière -->
+    <div id="bloc-journee" hidden>
+      <div class="titre-sec">Avant de partir</div>
+      <div class="bloc">
+        <div id="controles"></div>
+      </div>
+      <div class="bloc">
+        <div class="champ"><label for="i-restant">Reste à faire / réserves</label>
+          <textarea id="i-restant" placeholder="Rien, ou : manque la plaque murale, à repasser"
+                    oninput="majDossier()"></textarea></div>
+      </div>
+    </div>
+  </main>
+  <div class="barre">
+    <button class="gros vert" onclick="allerEnvoi()" id="btn-fin-releve">Terminer et envoyer</button>
+  </div>
+</div>
+
+<!-- ─────────── SALLE ─────────── -->
+<div class="ecran" id="e-salle">
+  <header>
+    <div class="dedans">
+      <button class="retour" onclick="fermerSalle()">‹</button>
+      <h1 id="titre-salle">Salle</h1>
+    </div>
+  </header>
+  <main>
+    <div class="bloc">
+      <div class="champ"><label for="s-nom">Nom de la salle</label>
+        <input id="s-nom" placeholder="Salle de réunion 2.04" oninput="majSalle()"></div>
+    </div>
+
+    <div class="bloc" id="bloc-guidees" hidden>
+      <label>Les trois photos qui comptent</label>
+      <div id="guidees"></div>
+    </div>
+
+    <div class="bloc">
+      <label id="lbl-photos">Photos</label>
+      <div class="photos" id="photos-salle"></div>
+      <label class="ajout-photo" style="margin-top:10px;display:flex">
+        <span id="lbl-ajout">Prendre des photos</span>
+        <input type="file" accept="image/*" capture="environment" multiple hidden
+               onchange="ajouterPhotos(this,'salle')">
+      </label>
+    </div>
+
+    <div class="bloc" id="bloc-fait" hidden>
+      <div class="champ"><label for="s-fait">Ce qui a été fait ici</label>
+        <textarea id="s-fait" placeholder="Pose écran 86&quot;, câblage HDMI, mise en service visio, test Teams OK"
+                  oninput="majSalle()"></textarea></div>
+    </div>
+
+    <div class="bloc" id="bloc-dims">
+      <label>Métrés (mètres)</label>
+      <div class="trio">
+        <input id="s-L" type="number" inputmode="decimal" step="0.01" placeholder="Long." oninput="majSalle()">
+        <input id="s-l" type="number" inputmode="decimal" step="0.01" placeholder="Larg." oninput="majSalle()">
+        <input id="s-H" type="number" inputmode="decimal" step="0.01" placeholder="Haut." oninput="majSalle()">
+      </div>
+      <div class="champ"><label for="s-metres" style="margin-top:12px">Autres mesures</label>
+        <textarea id="s-metres" placeholder="Recul écran 4,20&#10;Allège 0,90&#10;Faux plafond 2,70"
+                  oninput="majSalle()"></textarea></div>
+    </div>
+
+    <div class="bloc">
+      <div class="champ"><label for="s-notes" id="lbl-notes">Notes</label>
+        <textarea id="s-notes" placeholder="Existant, contraintes, arrivées, ce qu'il faut prévoir…"
+                  oninput="majSalle()"></textarea></div>
+    </div>
+
+    <button class="lien" onclick="supprimerSalle()">Supprimer cette salle</button>
+  </main>
+  <div class="barre">
+    <button class="gros" onclick="fermerSalle()">Salle suivante</button>
+  </div>
+</div>
+
+<!-- ─────────── ENVOI ─────────── -->
+<div class="ecran" id="e-envoi">
+  <header>
+    <div class="dedans">
+      <button class="retour" onclick="retourDossier()">‹</button>
+      <h1>Envoi<span class="sous" id="sous-envoi"></span></h1>
+    </div>
+  </header>
+  <main>
+    <div class="bloc" id="recap-envoi"></div>
+    <div class="bloc" id="avert-pdf" hidden
+         style="background:#fff5e6;border-left:4px solid var(--accent);font-size:14px"></div>
+    <div class="bloc" id="bloc-materiels">
+      <label>Matériels fournis</label>
+      <div id="materiels"></div>
+      <div class="champ" style="margin-top:12px">
+        <label for="m-autres">Autres</label>
+        <input id="m-autres" placeholder="Autre matériel laissé sur site"
+               oninput="courant.materiels.autres=this.value;sauver()">
+      </div>
+    </div>
+    <div class="bloc">
+      <label>Photos d'origine</label>
+      <small id="poids-photos" style="display:block;margin-bottom:10px"></small>
+      <button class="secondaire" onclick="recupererPhotos()">
+        Les récupérer sur le téléphone</button>
+    </div>
+    <p style="color:var(--gris);font-size:13px;margin:0 2px;line-height:1.45">
+      « Envoyer le rapport » ouvre le partage du téléphone avec le PDF déjà joint : tu choisis
+      WhatsApp, puis la conversation du bot.</p>
+  </main>
+  <div class="barre">
+    <button class="gros vert" id="btn-partage" onclick="etapeSuivante()">Continuer</button>
+  </div>
+</div>
+
+<!-- ─────────── SIGNATURES ─────────── -->
+<div class="ecran" id="e-signature">
+  <header>
+    <div class="dedans">
+      <button class="retour" onclick="allerEnvoi()">‹</button>
+      <h1>Signatures<span class="sous" id="sous-sign"></span></h1>
+    </div>
+  </header>
+  <main>
+    <div class="bloc">
+      <label>Signature de l'intervenant</label>
+      <div class="pad" id="pad-tech"></div>
+      <div class="pad-actions">
+        <span id="nom-tech" style="color:var(--gris);font-size:14px"></span>
+        <button class="lien" style="width:auto" onclick="effacerPad('tech')">Effacer</button>
+      </div>
+    </div>
+    <div class="bloc">
+      <label>Satisfaction du client</label>
+      <div class="etoiles" id="etoiles"></div>
+      <small id="note-txt" style="color:var(--gris);font-size:13px;display:block;margin-top:6px">
+        Demande au client comment il juge l'intervention.</small>
+    </div>
+    <div class="bloc">
+      <label>Signature du client</label>
+      <div class="champ" style="margin-bottom:10px">
+        <input id="s-nomclient" placeholder="Nom du signataire" oninput="majSign()">
+      </div>
+      <div class="pad" id="pad-client"></div>
+      <div class="pad-actions">
+        <span style="color:var(--gris);font-size:13px">Nom, signature et cachet du demandeur</span>
+        <button class="lien" style="width:auto" onclick="effacerPad('client')">Effacer</button>
+      </div>
+    </div>
+    <p style="color:var(--gris);font-size:13px;margin:0 2px">
+      Les deux signatures sont facultatives, mais un rapport signé par le client ne se conteste pas.</p>
+  </main>
+  <div class="barre">
+    <button class="gros vert" onclick="envoyerDepuisTelephone()">Valider et envoyer</button>
+  </div>
+</div>
+
+<div id="installer" hidden>
+  <b>Ajoute l'app à ton écran d'accueil</b>
+  <span>Partager <b>↑</b> puis « Sur l'écran d'accueil ». Sans ça, ton téléphone peut effacer
+  tes relevés au bout de quelques jours.</span>
+  <button onclick="fermerInstallation()">Compris</button>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ═══════════ Stockage : IndexedDB pour les photos, localStorage pour le reste ═══════════ */
+/* Nom conservé tel quel : le renommer ouvrirait une base vide et ferait
+   disparaître les photos des relevés en cours sur les téléphones déjà
+   équipés. Invisible hors de l'inspecteur Safari. */
+const DB="lct-chantiers";let db;
+function ouvrirDB(){return new Promise((ok,ko)=>{const r=indexedDB.open(DB,1);
+  r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains("photos"))d.createObjectStore("photos");};
+  r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>ko(r.error);});}
+function putPhoto(id,blob){return new Promise((ok,ko)=>{const t=db.transaction("photos","readwrite");
+  t.objectStore("photos").put(blob,id);t.oncomplete=ok;t.onerror=()=>ko(t.error);});}
+function getPhoto(id){return new Promise((ok,ko)=>{const t=db.transaction("photos","readonly");
+  const q=t.objectStore("photos").get(id);q.onsuccess=()=>ok(q.result);q.onerror=()=>ko(q.error);});}
+function delPhoto(id){return new Promise(ok=>{const t=db.transaction("photos","readwrite");
+  t.objectStore("photos").delete(id);t.oncomplete=ok;});}
+
+const S={get:k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},
+         set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+
+let dossiers=S.get("dossiers")||[];
+let auteur=S.get("auteur")||"";
+let courant=null, salleCourante=null;
+function sauver(){S.set("dossiers",dossiers)}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/* ═══════════ Écrans ═══════════ */
+function montrer(id){document.querySelectorAll(".ecran").forEach(e=>e.classList.remove("actif"));
+  document.getElementById(id).classList.add("actif");window.scrollTo(0,0);}
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("vu");
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("vu"),2600);}
+
+function enregistrerNom(){
+  const v=document.getElementById("auteur").value.trim();
+  if(!v){toast("Entrez votre nom");return}
+  auteur=v;S.set("auteur",v);rendreAccueil();
+}
+
+function rendreAccueil(){
+  document.getElementById("bloc-nom").hidden=!!auteur;
+  document.getElementById("bloc-actions").hidden=!auteur;
+  document.getElementById("nom-auteur").textContent=auteur||"";
+  const l=document.getElementById("liste-dossiers");
+  const brouillons=dossiers.filter(d=>d.etat!=="envoye");
+  const envoyes=dossiers.filter(d=>d.etat==="envoye").slice(-6).reverse();
+  let h="";
+  if(brouillons.length){h+='<div class="titre-sec">En cours</div>';
+    brouillons.forEach(d=>h+=carte(d));}
+  if(envoyes.length){h+='<div class="titre-sec">Envoyés</div>';envoyes.forEach(d=>h+=carte(d));}
+  if(!brouillons.length&&!envoyes.length)h='<div class="vide">Aucun dossier.<br>Commencez par un relevé ou une intervention.</div>';
+  l.innerHTML=h;
+  montrer("e-accueil");
+}
+function carte(d){
+  const n=`${(d.salles||[]).length} salle(s)`;
+  const p=d.etat==="envoye"?'<span class="pastille ok">envoyé</span>'
+        :d.etat==="a_envoyer"?'<span class="pastille att">à envoyer</span>':'';
+  return `<button class="carte" onclick="ouvrir('${d.id}')">
+    <div class="t"><b>${echap(d.chantier||"Sans nom")}</b>
+    <small>${d.type==="releve"?"Relevé":"Intervention"} · ${n} · ${d.date}</small></div>
+    ${p}<span class="fl">›</span></button>`;
+}
+const echap=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+const TYPES=["Installation","Livraison","SAV","Maintenance","Audit","Mise en service"];
+/* Trois types de câbles, une longueur et une quantité chacun, plus une ligne
+   libre pour le reste. */
+const MATERIELS=[["hdmi","HDMI"],["rj45","RJ45"],["usb","USB"]];
+const LONGUEURS=[1,2,3,5,10,15,20];
+const CONTROLES=[
+  ["tests","Tests de bon fonctionnement"],
+  ["priseEnMain","Prise en main du matériel installé"],
+  ["controleClient","Contrôle de l'installation avec le client"],
+  ["nettoye","Zone de travail nettoyée"],
+];
+
+function nouveau(type){
+  const h=new Date().toTimeString().slice(0,5);
+  courant={id:uid(),type,auteur,techs:auteur,chantier:"",client:"",adresse:"",contact:"",
+    date:new Date().toLocaleDateString("fr-FR"),etat:"brouillon",
+    typesInterv:[],arrivee:type==="intervention"?h:"",depart:"",controles:{},
+    salles:[],photos:[],fait:"",restant:"",duree:"",
+    materiels:{autres:""},note:0,
+    signTech:"",signClient:"",nomClient:""};
+  dossiers.push(courant);sauver();ouvrirDossier();
+}
+function ouvrir(id){courant=dossiers.find(d=>d.id===id);if(courant)ouvrirDossier();}
+function ouvrirDossier(){
+  const interv=courant.type==="intervention";
+  document.getElementById("r-chantier").value=courant.chantier;
+  document.getElementById("r-client").value=courant.client;
+  document.getElementById("r-adresse").value=courant.adresse||"";
+  document.getElementById("sous-releve").textContent=courant.date;
+  document.getElementById("titre-releve").firstChild.textContent=interv?"Intervention":"Relevé";
+  document.getElementById("titre-salles").textContent=interv?"Salles traitées":"Salles";
+  document.getElementById("champ-adresse").hidden=false;
+  document.getElementById("champ-contact").hidden=!interv;
+  document.getElementById("champ-techs").hidden=!interv;
+  document.getElementById("bloc-type").hidden=!interv;
+  document.getElementById("bloc-journee").hidden=!interv;
+  document.getElementById("lbl-societe").textContent=interv?"(client final)":"";
+  document.getElementById("r-contact").value=courant.contact||"";
+  document.getElementById("r-techs").value=courant.techs||courant.auteur||"";
+  if(interv){
+    document.getElementById("i-arrivee").value=courant.arrivee||"";
+    document.getElementById("i-depart").value=courant.depart||"";
+    document.getElementById("i-restant").value=courant.restant||"";
+    rendreTypes();rendreControles();majDuree();
+  }
+  rendreSalles();
+  document.getElementById("btn-photos").hidden=!photosDuDossier().length;
+  montrer("e-releve");
+}
+function allerAccueil(){rendreAccueil()}
+function retourDossier(){ouvrirDossier()}
+
+function majDossier(){
+  if(!courant)return;
+  courant.chantier=document.getElementById("r-chantier").value;
+  courant.client=document.getElementById("r-client").value;
+  courant.adresse=document.getElementById("r-adresse").value;
+  courant.contact=document.getElementById("r-contact").value;
+  if(courant.type==="intervention"){
+    courant.techs=document.getElementById("r-techs").value;
+    courant.arrivee=document.getElementById("i-arrivee").value;
+    courant.depart=document.getElementById("i-depart").value;
+    courant.restant=document.getElementById("i-restant").value;
+    majDuree();
+  }
+  sauver();
+}
+
+function rendreTypes(){
+  document.getElementById("puces-type").innerHTML=TYPES.map(t=>
+    `<button class="puce${(courant.typesInterv||[]).includes(t)?" on":""}"
+      onclick="basculeType('${t}')">${t}</button>`).join("");
+}
+function basculeType(t){
+  const l=courant.typesInterv=courant.typesInterv||[];
+  const i=l.indexOf(t); i<0?l.push(t):l.splice(i,1);
+  sauver();rendreTypes();
+}
+function rendreControles(){
+  document.getElementById("controles").innerHTML=CONTROLES.map(([c,lib])=>
+    `<label class="ctrl"><input type="checkbox" ${courant.controles&&courant.controles[c]?"checked":""}
+      onchange="basculeControle('${c}',this.checked)"><span>${lib}</span></label>`).join("");
+}
+function basculeControle(c,v){
+  courant.controles=courant.controles||{}; courant.controles[c]=v; sauver();
+}
+function majDuree(){
+  const a=courant.arrivee,d=courant.depart,el=document.getElementById("i-duree-calc");
+  if(!a||!d){courant.duree="";if(el)el.value="";return}
+  const [ha,ma]=a.split(":").map(Number),[hd,md]=d.split(":").map(Number);
+  let m=(hd*60+md)-(ha*60+ma); if(m<0)m+=1440;
+  courant.duree=`${Math.floor(m/60)} h${m%60?" "+String(m%60).padStart(2,"0"):""}`;
+  if(el)el.value=courant.duree;
+}
+
+/* ═══════════ Salles ═══════════ */
+function rendreSalles(){
+  const l=document.getElementById("liste-salles");
+  if(!courant.salles.length){l.innerHTML='<div class="vide">Aucune salle.<br>Ajoutez la première.</div>';return}
+  const interv=courant.type==="intervention";
+  l.innerHTML=courant.salles.map((s,i)=>{
+    const ng=Object.values(s.guidees||{}).filter(Boolean).length;
+    const det=interv
+      ? `${ng}/3 photos clés` + ((s.photos||[]).length? ` +${(s.photos||[]).length}`:"")
+      : `${(s.photos||[]).length} photo(s)` + (s.L&&s.l? " · "+s.L+" × "+s.l+" m":"");
+    const alerte=interv&&ng<3?' style="color:var(--accent)"':"";
+    return `<button class="carte" onclick="ouvrirSalle(${i})">
+    <div class="t"><b>${echap(s.nom||"Salle "+(i+1))}</b>
+    <small${alerte}>${det}</small></div>
+    <span class="fl">›</span></button>`;}).join("");
+}
+function nouvelleSalle(){
+  courant.salles.push({id:uid(),nom:"",L:"",l:"",H:"",metres:"",notes:"",fait:"",photos:[],guidees:{}});
+  sauver();ouvrirSalle(courant.salles.length-1);
+}
+function ouvrirSalle(i){
+  salleCourante=i;const s=courant.salles[i];
+  const interv=courant.type==="intervention";
+  document.getElementById("titre-salle").textContent=s.nom||"Salle "+(i+1);
+  ["nom","L","l","H","metres","notes","fait"].forEach(k=>document.getElementById("s-"+k).value=s[k]||"");
+  document.getElementById("bloc-fait").hidden=!interv;
+  document.getElementById("bloc-dims").hidden=interv;
+  document.getElementById("bloc-guidees").hidden=!interv;
+  document.getElementById("lbl-photos").textContent=interv?"Photos complémentaires":"Photos";
+  document.getElementById("lbl-ajout").textContent=interv?"Ajouter des photos":"Prendre des photos";
+  if(interv)rendreGuidees(s);
+  document.getElementById("lbl-notes").textContent=interv?"Remarques":"Notes";
+  document.getElementById("s-notes").placeholder=interv
+    ?"Ce qui a bloqué, ce qu'il faut signaler au chef…"
+    :"Existant, contraintes, arrivées, ce qu'il faut prévoir…";
+  rendrePhotos("salle",s);montrer("e-salle");
+  if(!s.nom)setTimeout(()=>document.getElementById("s-nom").focus(),250);
+}
+function majSalle(){
+  const s=courant.salles[salleCourante];if(!s)return;
+  ["nom","L","l","H","metres","notes","fait"].forEach(k=>s[k]=document.getElementById("s-"+k).value);
+  document.getElementById("titre-salle").textContent=s.nom||"Salle "+(salleCourante+1);
+  sauver();
+}
+function fermerSalle(){rendreSalles();
+  document.getElementById("btn-photos").hidden=!photosDuDossier().length;
+  montrer("e-releve")}
+function supprimerSalle(){
+  if(!confirm("Supprimer cette salle et ses photos ?"))return;
+  toutesPhotos(courant.salles[salleCourante]).forEach(delPhoto);
+  courant.salles.splice(salleCourante,1);sauver();fermerSalle();
+}
+
+/* ═══════════ Photos guidées ═══════════ */
+/* Trois clichés dans cet ordre prouvent qu'une installation fonctionne.
+   Un tas de photos ne prouve rien : c'est une demande du client. */
+const GUIDEES=[
+  ["off","Salle éteinte","Équipements en veille, avant mise sous tension"],
+  ["on","Équipements allumés","Tout est sous tension"],
+  ["run","En fonctionnement","Visioconférence en cours à l'écran"],
+];
+
+async function rendreGuidees(s){
+  const el=document.getElementById("guidees");
+  el.innerHTML="";
+  for(const [cle,titre,aide] of GUIDEES){
+    const id=(s.guidees||{})[cle];
+    const d=document.createElement("div");
+    d.className="guidee"+(id?" faite":"");
+    d.innerHTML=`<div class="num">${id?"✓":GUIDEES.findIndex(g=>g[0]===cle)+1}</div>
+      <div class="txt">${titre}<small>${aide}</small></div>`;
+    if(id){
+      const b=await getPhoto(id);
+      if(b){const i=document.createElement("img");i.src=URL.createObjectURL(b);d.append(i)}
+      const r=document.createElement("button");r.className="refaire";r.textContent="Refaire";
+      r.onclick=()=>remplacerGuidee(cle);
+      d.append(r);
+    }else{
+      const l=document.createElement("label");l.className="prendre";l.textContent="Prendre";
+      const inp=document.createElement("input");
+      inp.type="file";inp.accept="image/*";inp.capture="environment";inp.hidden=true;
+      inp.onchange=()=>capterGuidee(cle,inp);
+      l.append(inp);d.append(l);
+    }
+    el.append(d);
+  }
+}
+async function capterGuidee(cle,input){
+  const f=input.files&&input.files[0]; input.value="";
+  if(!f)return;
+  const s=courant.salles[salleCourante];
+  try{
+    const blob=await compresser(f); const id=uid(); await putPhoto(id,blob);
+    s.guidees=s.guidees||{};
+    if(s.guidees[cle])await delPhoto(s.guidees[cle]);
+    s.guidees[cle]=id; sauver(); await rendreGuidees(s); rendreSalles();
+  }catch(e){toast("Photo illisible")}
+}
+function remplacerGuidee(cle){
+  const s=courant.salles[salleCourante];
+  const inp=document.createElement("input");
+  inp.type="file";inp.accept="image/*";inp.capture="environment";
+  inp.onchange=()=>capterGuidee(cle,inp); inp.click();
+}
+
+/* ═══════════ Photos ═══════════ */
+async function compresser(file){
+  const img=await createImageBitmap(file);
+  const max=1600,r=Math.min(1,max/Math.max(img.width,img.height));
+  const c=document.createElement("canvas");
+  c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);
+  c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+  return new Promise(ok=>c.toBlob(ok,"image/jpeg",.72));
+}
+async function ajouterPhotos(input,cible){
+  const cible_obj=cible==="salle"?courant.salles[salleCourante]:courant;
+  const fichiers=[...input.files];input.value="";
+  if(!fichiers.length)return;
+  toast(fichiers.length+" photo(s) en cours…");
+  for(const f of fichiers){
+    try{
+      const blob=await compresser(f);const id=uid();
+      await putPhoto(id,blob);
+      (cible_obj.photos=cible_obj.photos||[]).push(id);
+      sauver();rendrePhotos(cible,cible_obj);
+    }catch(e){toast("Photo illisible, passée")}
+  }
+  if(cible==="salle")rendreSalles();
+  toast("Photos ajoutées");
+}
+async function rendrePhotos(cible,obj){
+  const el=document.getElementById(cible==="salle"?"photos-salle":"photos-interv");
+  const ids=obj.photos||[];
+  el.innerHTML="";
+  for(const id of ids){
+    const b=await getPhoto(id);if(!b)continue;
+    const d=document.createElement("div");d.className="vignette";
+    const i=document.createElement("img");i.src=URL.createObjectURL(b);
+    const x=document.createElement("button");x.textContent="×";
+    x.onclick=async ev=>{ev.stopPropagation();obj.photos=obj.photos.filter(p=>p!==id);
+      await delPhoto(id);sauver();rendrePhotos(cible,obj);if(cible==="salle")rendreSalles();};
+    d.append(i,x);el.append(d);
+  }
+}
+
+/* ═══════════ Envoi ═══════════ */
+function etapeSuivante(){
+  /* Une intervention se clôt par les signatures ; un relevé part directement. */
+  if(courant.type==="intervention")allerSignature(); else envoyerDepuisTelephone();
+}
+function allerEnvoi(){
+  majDossier();
+  if(!courant.chantier.trim()){toast("Indiquez le nom du chantier");return}
+  if(!courant.salles.length){toast("Ajoutez au moins une salle");return}
+  document.getElementById("sous-envoi").textContent=courant.chantier;
+  const photos=courant.salles.reduce((t,s)=>t+toutesPhotos(s).length,0);
+  document.getElementById("recap-envoi").innerHTML=
+    `<b style="font-size:18px">${echap(courant.chantier)}</b><br>
+     <span style="color:var(--gris)">${courant.type==="releve"?"Relevé":"Compte rendu d'intervention"}
+     · ${echap(courant.client||"client non précisé")}<br>
+     ${courant.salles.length} salle(s) · ${photos} photo(s)
+     · ${courant.date} · ${echap(courant.auteur)}</span>`;
+  majPoids();
+  const interv=courant.type==="intervention";
+  document.getElementById("btn-partage").textContent=interv?"Continuer":"Envoyer le rapport";
+  /* Un relevé constate l'existant : on ne fournit rien, le bloc n'a pas lieu d'être. */
+  document.getElementById("bloc-materiels").hidden=!interv;
+  if(interv)rendreMateriels();
+  montrer("e-envoi");
+}
+
+async function imagePourPdf(id){
+  /* On lit les dimensions réelles pour respecter l'orientation, et on embarque
+     le JPEG tel quel : jsPDF ne le réencode pas, la définition est conservée. */
+  const b=await getPhoto(id); if(!b)return null;
+  let W=4,H=3;
+  try{const bm=await createImageBitmap(b);W=bm.width;H=bm.height;bm.close&&bm.close();}catch(e){}
+  const url=await new Promise(ok=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.readAsDataURL(b)});
+  return {url,W,H};
+}
+
+async function construirePDF(){
+  const {jsPDF}=window.jspdf;
+  /* Pas de compress:true — jsPDF rend alors des pages blanches, et le gain est
+     de 4 Ko : les 858 Ko venaient des signatures en PNG, que jsPDF stockait
+     décompressées. Elles sont en JPEG depuis, le PDF pèse 65 Ko. */
+  const doc=new jsPDF({unit:"mm",format:"a4"});
+
+  /* ── Grille et palette ───────────────────────────────────────────
+     Marges généreuses, une seule famille bien réglée, des filets plutôt
+     que des aplats. Le document doit pouvoir arriver chez le client
+     final d'un intégrateur sans faire amateur. */
+  const L=210, H=297, M=18, W=L-2*M;
+  const ENCRE=[14,20,24], GRIS=[106,117,125], FAINT=[154,164,171],
+        FILET=[203,210,215], SIGNAL=[15,90,107], OK=[28,107,75];
+  let y=0;
+
+  const caps=(t,x,yy,{taille=8,espace=.55,coul=GRIS,align="left",gras=true}={})=>{
+    doc.setFont("helvetica",gras?"bold":"normal"); doc.setFontSize(taille);
+    doc.setTextColor(...coul); doc.setCharSpace(espace);
+    doc.text(String(t).toUpperCase(),x,yy,{align});
+    doc.setCharSpace(0);
+  };
+  /* Libellé à gauche, valeur à 32 mm : c'est la grille de tout le document.
+     Mais un libellé en capitales espacées est plus large qu'il n'en a l'air,
+     et au-delà de 32 mm il vient se poser SUR la valeur. On mesure donc, et on
+     décale si besoin — getTextWidth ignore l'interlettrage, on l'ajoute. */
+  const GOUTTIERE=32;
+  const gouttiere=(t,taille=6.8,espace=.5)=>{
+    const s=String(t).toUpperCase();
+    doc.setFont("helvetica","bold"); doc.setFontSize(taille);
+    const w=doc.getTextWidth(s)+espace*Math.max(0,s.length-1);
+    return Math.max(GOUTTIERE, w+4);
+  };
+  /* Ne jamais passer un tableau par String() : jsPDF attend le tableau lui-même
+     pour écrire plusieurs lignes, et String(["a","b"]) donne « a,b » sur une
+     seule ligne qui déborde de la page. */
+  const txt=(t,x,yy,{taille=9.5,coul=ENCRE,gras=false,align="left"}={})=>{
+    doc.setFont("helvetica",gras?"bold":"normal"); doc.setFontSize(taille);
+    doc.setTextColor(...coul);
+    doc.text(Array.isArray(t)?t:String(t),x,yy,{align});
+  };
+  const filet=(yy,x1=M,x2=L-M,coul=FILET,ep=.25)=>{
+    doc.setDrawColor(...coul); doc.setLineWidth(ep); doc.line(x1,yy,x2,yy);
+  };
+  /* Le filet de pied est à H-14 : on peut descendre jusqu'à H-20 sans le toucher. */
+  const saut=(h)=>{ if(y+h>H-20){ doc.addPage(); y=M+6; } };
+
+  const interv=courant.type==="intervention";
+  const genre=interv?"Compte rendu d'intervention":"Relevé de site";
+  /* Une référence rend le document opposable et classable. */
+  const ref=(interv?"CR":"RS")+"-"+(courant.date||"").split("/").reverse().join("")
+           +"-"+String(courant.id||"").slice(-4).toUpperCase();
+
+  /* ── Bandeau de tête ─────────────────────────────────────────── */
+  const enTete=()=>{
+    doc.setFillColor(...ENCRE); doc.rect(0,0,L,3,"F");
+    y=M+2;
+    caps(genre,M,y,{taille:8.5,espace:1.1,coul:ENCRE});
+    txt(ref,L-M,y,{taille:8.5,coul:FAINT,align:"right"});
+    y+=7;
+    doc.setFont("helvetica","bold"); doc.setFontSize(18); doc.setTextColor(...ENCRE);
+    doc.setFont("helvetica","bold"); doc.setFontSize(18);
+    const titre=doc.splitTextToSize(courant.chantier||"Sans intitulé",W);
+    doc.text(titre,M,y); y+=titre.length*7.4;
+    if(courant.client){
+      y+=1.5; txt(courant.client,M,y,{taille:11,coul:SIGNAL,gras:true}); y+=2;
+    }
+    y+=4; filet(y,M,L-M,ENCRE,.7); y+=9;
+  };
+  enTete();
+
+  /* ── Identité, en deux colonnes ───────────────────────────────── */
+  const lignes=[
+    ["Date",courant.date],
+    [interv?"Intervenants":"Relevé par",courant.techs||courant.auteur],
+    ["Adresse",courant.adresse],
+    ["Contact sur place",courant.contact],
+  ];
+  if(interv){
+    const h=[courant.arrivee&&"Arrivée "+courant.arrivee,
+             courant.depart&&"Départ "+courant.depart].filter(Boolean).join("  ·  ");
+    lignes.push(["Horaires",h+(courant.duree?"  ·  "+courant.duree:"")]);
+    lignes.push(["Nature",(courant.typesInterv||[]).join(", ")]);
+  }
+  const colL=W/2-4;
+  let col=0, yDep=y, yMax=y;
+  for(const [k,v] of lignes){
+    if(!v)continue;
+    const x=M+col*(colL+8);
+    let yy=col===0?y:yDep;
+    if(col===0)yDep=y;
+    caps(k,x,yy,{taille:6.8,espace:.5,coul:FAINT});
+    doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+    const vl=doc.splitTextToSize(String(v),colL);
+    txt(vl,x,yy+4.6,{taille:9.5});
+    const bas=yy+4.6+vl.length*4.4+4;
+    yMax=Math.max(yMax,bas);
+    if(col===0){ y=bas; } else { yDep=bas; }
+    col=1-col;
+  }
+  y=yMax+3; filet(y); y+=9;
+
+  /* ── Les salles ───────────────────────────────────────────────── */
+  const photosGrille=async(ids,legendes)=>{
+    if(!ids.length)return;
+    /* Toujours trois colonnes : sinon une photo isolée occupe toute la largeur
+       de la page et déséquilibre le document. */
+    const n=3, cw=(W-6*(n-1))/n, ch=cw*0.74;
+    for(let i=0;i<ids.length;i++){
+      const col=i%n;
+      if(col===0)saut(ch+(legendes?10:6));
+      const im=await imagePourPdf(ids[i]); if(!im)continue;
+      const x0=M+col*(cw+6);
+      if(legendes&&legendes[i])caps(legendes[i],x0,y,{taille:6.3,espace:.45,coul:SIGNAL});
+      const yImg=y+(legendes&&legendes[i]?2.6:0);
+      const r=Math.min(cw/im.W,ch/im.H), w=im.W*r, h=im.H*r;
+      try{doc.addImage(im.url,"JPEG",x0+(cw-w)/2,yImg,w,h,undefined,"FAST")}catch(e){}
+      doc.setDrawColor(...FILET); doc.setLineWidth(.2);
+      doc.rect(x0+(cw-w)/2,yImg,w,h);
+      if(col===n-1||i===ids.length-1)y=yImg+ch+7;
+    }
+  };
+
+  for(let i=0;i<courant.salles.length;i++){
+    const s=courant.salles[i];
+    saut(26);
+    /* Numéro en pastille : on retrouve une salle d'un coup d'œil. */
+    doc.setFillColor(...ENCRE); doc.circle(M+2.6,y-1.4,2.6,"F");
+    txt(String(i+1),M+2.6,y-0.2,{taille:7,coul:[255,255,255],gras:true,align:"center"});
+    txt(s.nom||("Salle "+(i+1)),M+8,y,{taille:12.5,gras:true});
+    y+=3; filet(y,M,L-M,FILET,.4); y+=7;
+
+    const champs=interv
+      ? [["Réalisé",s.fait],["Remarques",s.notes]]
+      : [["Dimensions",[s.L&&s.l?`${s.L} × ${s.l} m`:"",s.H?`H ${s.H} m`:""].filter(Boolean).join("  ·  ")],
+         ["Métrés",s.metres],["Notes",s.notes]];
+    for(const [k,v] of champs){
+      if(!v)continue;
+      const g=gouttiere(k);
+      doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+      const vl=doc.splitTextToSize(String(v),W-g);
+      saut(vl.length*4.6+6);
+      caps(k,M,y,{taille:6.8,espace:.5,coul:FAINT});
+      txt(vl,M+g,y,{taille:9.5});
+      y+=Math.max(vl.length*4.6,5)+4;
+    }
+    y+=2;
+    if(interv){
+      const cles=GUIDEES.filter(([c])=>(s.guidees||{})[c]);
+      await photosGrille(cles.map(([c])=>s.guidees[c]), cles.map(([,t])=>t));
+      if((s.photos||[]).length)await photosGrille(s.photos,null);
+    }else if((s.photos||[]).length){
+      await photosGrille(s.photos,null);
+    }
+    y+=3;
+  }
+
+  /* ── Contrôles, réserves, signatures ──────────────────────────── */
+  if(interv){
+    /* Clôture solidaire : contrôles, réserves et signatures forment un tout.
+       Séparés, on obtient une dernière page avec deux cadres et rien d'autre. */
+    doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+    const hReserves=courant.restant
+      ? doc.splitTextToSize(courant.restant,W-32).length*4.6+6 : 0;
+    const hSign=(courant.signTech||courant.signClient)?42:0;
+    const lignesMat=materielsRemplis();
+    const hMat=lignesMat.length?lignesMat.length*4.6+6:0;
+    const hNote=courant.note?10:0;
+    saut(16+CONTROLES.length*6.4+hReserves+hMat+hNote+hSign);
+    filet(y,M,L-M,ENCRE,.7); y+=7;
+    caps("Avant de partir",M,y,{taille:8.5,espace:1,coul:ENCRE}); y+=7;
+    for(const [c,lib] of CONTROLES){
+      const fait=courant.controles&&courant.controles[c];
+      if(fait){
+        doc.setFillColor(...OK); doc.roundedRect(M,y-3.1,3.8,3.8,.6,.6,"F");
+        doc.setDrawColor(255,255,255); doc.setLineWidth(.45);
+        doc.line(M+.9,y-1.3,M+1.7,y-.5); doc.line(M+1.7,y-.5,M+3,y-2.3);
+      }else{
+        doc.setDrawColor(...FILET); doc.setLineWidth(.35);
+        doc.roundedRect(M,y-3.1,3.8,3.8,.6,.6);
+      }
+      txt(lib,M+7,y,{taille:9.5,coul:fait?ENCRE:GRIS});
+      y+=6.4;
+    }
+    y+=2;
+    if(courant.restant){
+      const g=gouttiere("Reste à faire");
+      doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+      const vl=doc.splitTextToSize(courant.restant,W-g);
+      saut(vl.length*4.6+8);
+      caps("Reste à faire",M,y,{taille:6.8,espace:.5,coul:FAINT});
+      txt(vl,M+g,y,{taille:9.5}); y+=vl.length*4.6+6;
+    }
+    if(lignesMat.length){
+      caps("Matériel",M,y,{taille:6.8,espace:.5,coul:FAINT});
+      txt(lignesMat,M+gouttiere("Matériel"),y,{taille:9.5});
+      y+=lignesMat.length*4.6+6;
+    }
+    if(courant.note){
+      /* ★ n'existe pas dans WinAnsi : jsPDF le rendrait en charabia.
+         On trace donc les étoiles en vectoriel. */
+      const etoile=(cx,cy,R,plein)=>{
+        const r=R*.382, pts=[];
+        for(let k=0;k<10;k++){
+          const a=(-90+k*36)*Math.PI/180;
+          const rad=(k%2)?r:R;
+          pts.push([cx+rad*Math.cos(a), cy+rad*Math.sin(a)]);
+        }
+        const d=[];
+        for(let k=1;k<10;k++)d.push([pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]]);
+        if(plein)doc.setFillColor(200,144,26);
+        else{doc.setDrawColor(...FILET);doc.setLineWidth(.3)}
+        doc.lines(d, pts[0][0], pts[0][1], [1,1], plein?"F":"S", true);
+      };
+      caps("Satisfaction",M,y,{taille:6.8,espace:.5,coul:FAINT});
+      const gN=M+gouttiere("Satisfaction")+2;
+      for(let i=1;i<=5;i++)etoile(gN+(i-1)*7, y-1.4, 2.6, i<=courant.note);
+      txt(courant.note+"/5",gN+5*7-1,y,{taille:8.5,coul:GRIS});
+      y+=10;
+    }
+    if(courant.signTech||courant.signClient){
+      const cw=(W-10)/2, hb=26;
+      y+=3;
+      const poser=(img,x0,titre,nom)=>{
+        caps(titre,x0,y,{taille:6.8,espace:.5,coul:FAINT});
+        const yb=y+2.5;
+        doc.setDrawColor(...FILET); doc.setLineWidth(.3);
+        doc.rect(x0,yb,cw,hb);
+        if(img){
+          const t=img.startsWith("data:image/png")?"PNG":"JPEG";
+          try{doc.addImage(img,t,x0+2,yb+2,cw-4,hb-4,undefined,"FAST")}catch(e){}
+        }
+        filet(yb+hb+4,x0,x0+cw,FILET,.3);
+        txt(nom||"",x0,yb+hb+8,{taille:8,coul:GRIS});
+      };
+      poser(courant.signTech,M,"Visa de l'intervenant",courant.techs||courant.auteur);
+      poser(courant.signClient,M+cw+10,"Visa du client",courant.nomClient);
+      y+=2.5+hb+11;
+    }
+  }
+
+  /* ── Pied de page ─────────────────────────────────────────────── */
+  const n=doc.getNumberOfPages();
+  for(let p=1;p<=n;p++){
+    doc.setPage(p);
+    filet(H-14,M,L-M,FILET,.25);
+    txt([courant.chantier,courant.client].filter(Boolean).join("  ·  ").slice(0,78),
+        M,H-10,{taille:7.5,coul:FAINT});
+    txt(ref+"    "+p+"/"+n,L-M,H-10,{taille:7.5,coul:FAINT,align:"right"});
+  }
+  return doc;
+}
+
+/* ═══════════ Récupérer les photos hors du PDF ═══════════ */
+function sansAccent(t){
+  /* « réunion » ne doit pas devenir « runion » : on translittère avant de nettoyer. */
+  return (t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^\w\- ]/g,"").trim().replace(/\s+/g,"_");
+}
+function toutesPhotos(s){
+  const g=Object.values(s.guidees||{}).filter(Boolean);
+  return g.concat(s.photos||[]);
+}
+function photosDuDossier(){
+  /* [{id, nom}] — nommées pour être lisibles une fois sorties de l'app. */
+  const base=sansAccent(courant.chantier)||"chantier";
+  const out=[];
+  courant.salles.forEach((s,i)=>{
+    const sn=sansAccent(s.nom)||("Salle"+(i+1));
+    toutesPhotos(s).forEach((id,j)=>
+      out.push({id,nom:`${base}_${String(i+1).padStart(2,"0")}-${sn}_${j+1}.jpg`}));
+  });
+  return out;
+}
+async function blobsDuDossier(){
+  const out=[];
+  for(const p of photosDuDossier()){
+    const b=await getPhoto(p.id);
+    if(b)out.push(new File([b],p.nom,{type:"image/jpeg"}));
+  }
+  return out;
+}
+async function recupererPhotos(){
+  const fichiers=await blobsDuDossier();
+  if(!fichiers.length){toast("Aucune photo dans ce dossier");return}
+  /* Le partage iOS ouvre Photos, Fichiers, Mail, OneDrive… c'est ce qui
+     ressemble le plus à « je récupère mes photos ». */
+  if(navigator.canShare&&navigator.canShare({files:fichiers})){
+    try{await navigator.share({files:fichiers,title:courant.chantier||"Photos"});return}
+    catch(e){if(e.name==="AbortError")return}
+  }
+  for(const f of fichiers){                       /* repli : téléchargement un à un */
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(f);a.download=f.name;a.click();
+    await new Promise(r=>setTimeout(r,180));URL.revokeObjectURL(a.href);
+  }
+  toast(fichiers.length+" photo(s) enregistrée(s)");
+}
+const PHOTOS_ALERTE=40;   /* au-delà, le PDF devient lourd pour une messagerie */
+
+async function poidsPhotos(){
+  let o=0;for(const p of photosDuDossier()){const b=await getPhoto(p.id);if(b)o+=b.size}
+  return o;
+}
+async function majPoids(){
+  const el=document.getElementById("poids-photos"), liste=photosDuDossier();
+  if(!liste.length){el.textContent="Aucune photo";el.style.color="var(--gris)";}
+  else{
+    const mo=(await poidsPhotos())/1048576;
+    el.textContent=`${liste.length} photo(s) · ${mo.toFixed(1)} Mo`
+      +(mo>12?" — au-delà de 10 Mo, le partage peut refuser":"");
+    el.style.color=mo>12?"var(--accent)":"var(--gris)";
+  }
+  /* Le PDF lui-même : on prévient avant de fabriquer un fichier intransmissible. */
+  const av=document.getElementById("avert-pdf");
+  const mo_pdf=(await poidsPhotos())/1048576*1.05;
+  if(liste.length>PHOTOS_ALERTE||mo_pdf>9){
+    av.hidden=false;
+    av.textContent=`${liste.length} photos dans le rapport, environ ${mo_pdf.toFixed(1)} Mo. `
+      +`Au-delà de 10 Mo le mail risque d'être refusé : faites deux dossiers, `
+      +`ou décochez les photos jointes et récupérez-les à part.`;
+  }else av.hidden=true;
+}
+
+/* ═══════════ Signatures ═══════════ */
+const pads={};
+function creerPad(cle,conteneur){
+  const div=document.getElementById(conteneur);
+  div.innerHTML=""; const c=document.createElement("canvas"); div.append(c);
+  const r=div.getBoundingClientRect(), dpr=devicePixelRatio||1;
+  c.width=r.width*dpr; c.height=r.height*dpr;
+  const x=c.getContext("2d"); x.scale(dpr,dpr);
+  x.lineWidth=2.4; x.lineCap="round"; x.lineJoin="round"; x.strokeStyle="#12171b";
+  let trace=false,vide=true;
+  const pos=e=>{const b=c.getBoundingClientRect();const t=e.touches?e.touches[0]:e;
+    return [t.clientX-b.left, t.clientY-b.top];};
+  const debut=e=>{e.preventDefault();trace=true;const[a,b]=pos(e);x.beginPath();x.moveTo(a,b);};
+  const bouge=e=>{if(!trace)return;e.preventDefault();const[a,b]=pos(e);x.lineTo(a,b);x.stroke();
+    if(vide){vide=false;div.classList.add("signe");}};
+  const fin=()=>{if(!trace)return;trace=false;enregistrerPad(cle);};
+  c.addEventListener("pointerdown",debut); c.addEventListener("pointermove",bouge);
+  addEventListener("pointerup",fin); c.addEventListener("pointercancel",fin);
+  pads[cle]={canvas:c,ctx:x,div,estVide:()=>vide,vider:()=>{
+    x.clearRect(0,0,c.width,c.height);vide=true;div.classList.remove("signe");}};
+  // remettre une signature déjà posée
+  const dejala=cle==="tech"?courant.signTech:courant.signClient;
+  if(dejala){const i=new Image();i.onload=()=>{x.drawImage(i,0,0,r.width,r.height);
+    vide=false;div.classList.add("signe");};i.src=dejala;}
+}
+function enregistrerPad(cle){
+  /* Le trait est noir sur blanc : un JPEG à largeur raisonnable suffit et pèse
+     dix fois moins qu'un PNG plein écran, que jsPDF stockerait décompressé. */
+  const p=pads[cle]; if(!p||p.estVide())return;
+  const src=p.canvas, larg=700, r=larg/src.width;
+  const c=document.createElement("canvas");
+  c.width=larg; c.height=Math.round(src.height*r);
+  const x=c.getContext("2d");
+  x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height);
+  x.drawImage(src,0,0,c.width,c.height);
+  const img=c.toDataURL("image/jpeg",.85);
+  if(cle==="tech")courant.signTech=img; else courant.signClient=img;
+  sauver();
+}
+function effacerPad(cle){
+  const p=pads[cle]; if(!p)return; p.vider();
+  if(cle==="tech")courant.signTech=""; else courant.signClient="";
+  sauver();
+}
+/* ═══════════ Matériels fournis ═══════════ */
+function rendreMateriels(){
+  courant.materiels=courant.materiels||{autres:""};
+  const m=courant.materiels;
+  document.getElementById("materiels").innerHTML=MATERIELS.map(([c,lib])=>{
+    const v=m[c]||{};
+    const opts=LONGUEURS.map(l=>
+      `<option value="${l}"${+v.lg===l?" selected":""}>${l} m</option>`).join("");
+    return `<div class="mat">
+      <b>${lib}</b>
+      <select onchange="majMateriel('${c}','lg',this.value)">
+        <option value=""${v.lg?"":" selected"}>Longueur</option>${opts}</select>
+      <input type="number" inputmode="numeric" min="0" placeholder="Qté"
+             value="${v.qte||""}" onchange="majMateriel('${c}','qte',this.value)">
+    </div>`;
+  }).join("");
+  document.getElementById("m-autres").value=m.autres||"";
+}
+function majMateriel(cle,champ,valeur){
+  const m=courant.materiels=courant.materiels||{autres:""};
+  m[cle]=m[cle]||{}; m[cle][champ]=valeur;
+  if(!m[cle].lg&&!m[cle].qte)delete m[cle];
+  sauver();
+}
+function materielsRemplis(){
+  const m=courant.materiels||{};
+  const l=MATERIELS.filter(([c])=>m[c]&&(m[c].lg||m[c].qte))
+    .map(([c,lib])=>`${lib}${m[c].lg?" "+m[c].lg+" m":""}${m[c].qte?" × "+m[c].qte:""}`);
+  if((m.autres||"").trim())l.push(m.autres.trim());
+  return l;
+}
+
+/* ═══════════ Note du client ═══════════ */
+const NOTE_TXT=["Demande au client comment il juge l'intervention.",
+  "Très insatisfait","Insatisfait","Correct","Satisfait","Très satisfait"];
+function rendreNote(){
+  const n=courant.note||0;
+  document.getElementById("etoiles").innerHTML=[1,2,3,4,5].map(i=>
+    `<button type="button" class="${i<=n?"pleine":""}" aria-label="${i} sur 5"
+       onclick="setNote(${i})">${i<=n?"★":"☆"}</button>`).join("");
+  document.getElementById("note-txt").textContent=NOTE_TXT[n];
+}
+function setNote(i){
+  /* Retaper l'étoile courante efface la note : le client peut refuser de noter. */
+  courant.note=(courant.note===i)?0:i; sauver(); rendreNote();
+}
+
+function majSign(){courant.nomClient=document.getElementById("s-nomclient").value;sauver();}
+function allerSignature(){
+  document.getElementById("sous-sign").textContent=courant.chantier||"";
+  document.getElementById("nom-tech").textContent=courant.techs||courant.auteur||"";
+  document.getElementById("s-nomclient").value=courant.nomClient||"";
+  rendreNote();
+  montrer("e-signature");
+  setTimeout(()=>{creerPad("tech","pad-tech");creerPad("client","pad-client");},60);
+}
+
+/* ═══════════ Repli : la messagerie du technicien ═══════════ */
+async function envoyerDepuisTelephone(){
+  /* Tant qu'aucun domaine n'est vérifié, le serveur ne peut écrire à personne
+     d'autre qu'au titulaire du compte. Ce chemin-là ne dépend de rien : le PDF
+     part de la boîte du technicien, et le chef peut lui répondre directement. */
+  const btn=document.querySelector(".ecran.actif .barre .gros");
+  if(btn){btn.disabled=true;btn.textContent="Préparation du PDF…";}
+  try{
+    const pdf=await construirePDF();
+    const nom=`${courant.type==="releve"?"Releve":"CR"}_${sansAccent(courant.chantier)||"chantier"}`
+      +`_${courant.date.replace(/\//g,"-")}.pdf`;
+    const f=new File([pdf.output("blob")],nom,{type:"application/pdf"});
+    const titre=(courant.type==="releve"?"Relevé de site":"Compte rendu")+" — "+(courant.chantier||"");
+    if(navigator.canShare&&navigator.canShare({files:[f]})){
+      await navigator.share({files:[f],title:titre,text:titre});
+      courant.etat="envoye";sauver();toast("Envoyé");rendreAccueil();
+    }else{
+      const a=document.createElement("a");a.href=URL.createObjectURL(f);a.download=nom;a.click();
+      toast("PDF enregistré, à joindre à ton mail");
+    }
+  }catch(e){ if(e.name!=="AbortError")toast("Impossible : "+e.message); }
+  if(btn){btn.disabled=false;btn.textContent="Envoyer le rapport";}
+}
+
+/* ═══════════ Ménage : un téléphone n'est pas un serveur d'archives ═══════════ */
+async function menage(jours=60){
+  const limite=Date.now()-jours*86400000;let n=0;
+  for(const d of dossiers.filter(x=>x.etat==="envoye")){
+    const [j,m,a]=(d.date||"").split("/");
+    if(!a||new Date(+a,+m-1,+j).getTime()>limite)continue;
+    for(const s of d.salles||[])for(const id of toutesPhotos(s)){await delPhoto(id);n++}
+    (d.salles||[]).forEach(s=>{s.photos=[];s.guidees={}}); d.allege=true;
+  }
+  if(n){sauver();console.log("ménage :",n,"photos libérées")}
+}
+
+/* ═══════════ Réseau ═══════════ */
+function majReseau(){const r=document.getElementById("reseau");
+  r.textContent=navigator.onLine?"en ligne":"hors ligne";
+  r.className="reseau"+(navigator.onLine?"":" off");}
+addEventListener("online",majReseau);addEventListener("offline",majReseau);
+
+/* ═══════════ Démarrage ═══════════ */
+function fermerInstallation(){
+  document.getElementById("installer").hidden=true;
+  try{localStorage.setItem("vuInstall","1")}catch(e){}
+}
+function bandeauInstallation(){
+  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const installee=window.navigator.standalone||matchMedia("(display-mode: standalone)").matches;
+  if(ios&&!installee&&!localStorage.getItem("vuInstall"))
+    setTimeout(()=>document.getElementById("installer").hidden=false,2500);
+}
+ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();
+  if(!auteur)setTimeout(()=>document.getElementById("auteur").focus(),300);});
+if("serviceWorker" in navigator)navigator.serviceWorker.register("/static/chantier-sw.js").catch(()=>{});
+</script>
+</body>
+</html>
