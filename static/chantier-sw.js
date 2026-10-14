@@ -1,7 +1,7 @@
 /* Chantiers — le technicien doit pouvoir travailler dans un sous-sol.
    Coquille en cache, données en IndexedDB : rien ne dépend du réseau
    avant l'envoi final. */
-const CACHE = "chantiers-v9";
+const CACHE = "chantiers-v10";
 const COQUILLE = [
   "/chantier",
   "/static/chantier-manifest.json",
