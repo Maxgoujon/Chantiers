@@ -13,8 +13,10 @@ part par le partage iOS vers le bot WhatsApp du client. Aucune donnée de leurs
 clients ne touche ce serveur — ce qui évite aussi d'en devenir sous-traitant au
 sens du RGPD.
 """
+import json
 import os
-from flask import Flask, render_template, redirect, send_from_directory
+import sys
+from flask import Flask, render_template, redirect, request, send_from_directory
 
 app = Flask(__name__)
 
@@ -48,6 +50,28 @@ def ping():
 @app.route("/chantier")
 def chantier():
     return render_template("chantier.html")
+
+
+@app.route("/journal", methods=["POST"])
+def journal():
+    """Recueille les erreurs survenues sur les telephones.
+
+    Sans ca, personne ne sait rien : si la fabrication du PDF casse sur une
+    version d'iOS, le technicien recommence trois fois puis abandonne, et
+    l'information ne remonte jamais.
+
+    Rien n'est stocke et rien n'est transmis ailleurs : on ecrit sur la sortie
+    standard, que l'hebergeur affiche. Et surtout, le message n'emporte aucune
+    donnee de chantier -- ni nom de client, ni adresse, ni photo. Ce service ne
+    doit jamais devenir un endroit ou transitent les affaires du client.
+    """
+    try:
+        d = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        return "", 204
+    propre = {c: str(d.get(c, ""))[:300] for c in ("quoi", "message", "version", "appareil")}
+    print("JOURNAL " + json.dumps(propre, ensure_ascii=False), file=sys.stderr, flush=True)
+    return "", 204
 
 
 @app.route("/chantier-sw.js")

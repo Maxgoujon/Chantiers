@@ -671,7 +671,7 @@ async function supprimerDossier(id){
   if(!confirm(`Supprimer ${quoi} ?\n\n${d.chantier||"Sans nom"} — ${d.date}\n\nLe PDF déjà envoyé n'est pas concerné. Les photos seront effacées du téléphone.`))return;
   for(const s of d.salles||[])for(const pid of toutesPhotos(s))await delPhoto(pid);
   const i=dossiers.indexOf(d); if(i>=0)dossiers.splice(i,1);
-  if(courant===d)courant=null;
+  if(courant===d){courant=null;salleCourante=null;montrer("e-accueil")}
   sauver(); rendreAccueil(); toast("Supprimé");
 }
 const echap=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -682,6 +682,50 @@ const echap=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
    automatique depuis le serveur demande un domaine vérifié chez l'hébergeur
    de courrier, donc trois enregistrements DNS chez le client. */
 const ADRESSE_RAPPORTS="";
+
+/* ═══════════ Journal des pannes ═══════════
+   Un technicien qui voit une erreur recommence, puis abandonne, et personne
+   n'en saura jamais rien. On note ce qui casse et on le remonte au prochain
+   passage en ligne.
+
+   Ce qui part : ce qu'on faisait, le message d'erreur, la version de l'app et
+   l'appareil. Rien d'autre. Ni nom de chantier, ni client, ni adresse, ni
+   photo — ce serveur ne doit jamais voir les affaires du client. */
+const VERSION_APP="2026-10-25";
+
+function signaler(quoi,err){
+  try{
+    const f=(S.get("journal")||[]).slice(-19);
+    f.push({quoi:String(quoi).slice(0,80),
+            message:String(err&&err.message||err).slice(0,200),
+            version:VERSION_APP,
+            appareil:navigator.userAgent.slice(0,120),
+            t:Date.now()});
+    S.set("journal",f);
+  }catch(e){}
+  viderJournal();
+}
+
+async function viderJournal(){
+  if(!navigator.onLine)return;
+  const f=S.get("journal")||[];
+  if(!f.length)return;
+  const reste=[];
+  for(const e of f){
+    try{
+      await fetch("/journal",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(e),keepalive:true});
+    }catch(err){ reste.push(e); }
+  }
+  /* Une panne peut survenir pendant l'envoi : on relit avant d'ecrire, sinon
+     la nouvelle entree serait ecrasee par l'ancienne liste. */
+  const depuis=(S.get("journal")||[]).filter(x=>!f.some(y=>y.t===x.t));
+  S.set("journal",reste.concat(depuis));
+}
+
+addEventListener("error",e=>signaler("erreur",e.error||e.message));
+addEventListener("unhandledrejection",e=>signaler("promesse",e.reason));
+addEventListener("online",viderJournal);
 
 async function copierAdresse(){
   try{ await navigator.clipboard.writeText(ADRESSE_RAPPORTS); toast("Adresse copiée"); }
@@ -973,6 +1017,7 @@ async function imagePourPdf(id){
 }
 
 async function construirePDF(){
+  if(!courant)return;
   const {jsPDF}=window.jspdf;
   /* Pas de compress:true — jsPDF rend alors des pages blanches, et le gain est
      de 4 Ko : les 858 Ko venaient des signatures en PNG, que jsPDF stockait
@@ -1277,6 +1322,7 @@ async function poidsPhotos(){
   return o;
 }
 async function majPoids(){
+  if(!courant)return;
   const el=document.getElementById("poids-photos"), liste=photosDuDossier();
   if(!liste.length){el.textContent="Aucune photo";el.style.color="var(--gris)";}
   else{
@@ -1299,6 +1345,7 @@ async function majPoids(){
 /* ═══════════ Signatures ═══════════ */
 const pads={};
 function creerPad(cle,conteneur){
+  if(!courant)return;
   const div=document.getElementById(conteneur);
   div.innerHTML=""; const c=document.createElement("canvas"); div.append(c);
   const r=div.getBoundingClientRect(), dpr=devicePixelRatio||1;
@@ -1322,6 +1369,7 @@ function creerPad(cle,conteneur){
     vide=false;div.classList.add("signe");};i.src=dejala;}
 }
 function enregistrerPad(cle){
+  if(!courant)return;
   /* Le trait est noir sur blanc : un JPEG à largeur raisonnable suffit et pèse
      dix fois moins qu'un PNG plein écran, que jsPDF stockerait décompressé. */
   const p=pads[cle]; if(!p||p.estVide())return;
@@ -1336,6 +1384,7 @@ function enregistrerPad(cle){
   sauver();
 }
 function effacerPad(cle){
+  if(!courant)return;
   const p=pads[cle]; if(!p)return; p.vider();
   if(cle==="tech")courant.signTech=""; else courant.signClient="";
   sauver();
@@ -1387,7 +1436,8 @@ function setNote(i){
   courant.note=(courant.note===i)?0:i; sauver(); rendreNote();
 }
 
-function majSign(){courant.nomClient=document.getElementById("s-nomclient").value;sauver();}
+function majSign(){
+  if(!courant)return;courant.nomClient=document.getElementById("s-nomclient").value;sauver();}
 function allerSignature(){
   document.getElementById("sous-sign").textContent=courant.chantier||"";
   document.getElementById("nom-tech").textContent=courant.techs||courant.auteur||"";
@@ -1417,7 +1467,9 @@ async function envoyerDepuisTelephone(){
       const a=document.createElement("a");a.href=URL.createObjectURL(f);a.download=nom;a.click();
       toast("PDF enregistré, à joindre à ton mail");
     }
-  }catch(e){ if(e.name!=="AbortError")toast("Impossible : "+e.message); }
+  }catch(e){
+    if(e.name!=="AbortError"){ signaler("envoi PDF",e); toast("Impossible : "+e.message); }
+  }
   if(btn){btn.disabled=false;btn.textContent="Envoyer le rapport";}
 }
 
@@ -1497,7 +1549,7 @@ function bandeauInstallation(){
   if(ios&&!installee&&!localStorage.getItem("vuInstall"))
     setTimeout(()=>document.getElementById("installer").hidden=false,2500);
 }
-ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();
+ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();viderJournal();
   if(!auteur)setTimeout(()=>document.getElementById("auteur").focus(),300);});
 /* Depuis la racine, et pas depuis /static/ : la portée d'un worker est le
    dossier d'où il est servi, et /static/ ne couvre pas /chantier. */
