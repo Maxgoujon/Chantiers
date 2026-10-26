@@ -43,6 +43,11 @@
 /* Un sélecteur d'identifiant avec display:flex l'emporte sur l'attribut hidden :
    sans ce !important, masquer un bloc par « hidden » ne fait rien du tout. */
 [hidden]{display:none!important}
+.verrou{background:#FFF5E6;border-left:3px solid var(--accent,#9A6410)}
+.verrou b{display:block;margin-bottom:4px}
+.verrou span{display:block;font-size:13.5px;color:var(--gris);line-height:1.5}
+.verrouille input,.verrouille textarea,.verrouille select{
+  background:var(--surface-2,#f1f4f5);color:var(--gris)}
 .jauge-memoire{margin-top:14px;padding:12px 14px;border-radius:var(--r);
   background:#FFF5E6;color:#8A5A12;font-size:13px;line-height:1.45}
 .jauge-memoire b{display:block;margin-bottom:3px}
@@ -338,6 +343,14 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
     </div>
   </header>
   <main>
+    <div class="bloc verrou" id="bandeau-verrou" hidden>
+      <b>Rapport envoyé — verrouillé</b>
+      <span>Un rapport signé ne se modifie plus. Pour corriger quelque chose,
+      duplique-le : tu obtiens un nouveau dossier modifiable, celui-ci reste intact.</span>
+      <button class="secondaire" style="margin-top:11px" onclick="dupliquerDossier()">
+        Dupliquer pour corriger</button>
+    </div>
+
     <div class="bloc">
       <div class="champ"><label for="r-chantier">Chantier</label>
         <input id="r-chantier" placeholder="Tour Trinity — 12e étage" oninput="majDossier()"></div>
@@ -681,7 +694,21 @@ const echap=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
    L'envoi reste manuel — le technicien choisit Mail dans le partage. Un envoi
    automatique depuis le serveur demande un domaine vérifié chez l'hébergeur
    de courrier, donc trois enregistrements DNS chez le client. */
-const ADRESSE_RAPPORTS="";
+/* L'adresse vient du serveur, pas du code : elle se change depuis le tableau
+   de bord de l'hebergeur, sans redeploiement et sans ressaisie sur trente
+   telephones. On garde la derniere connue pour qu'elle reste lisible hors ligne. */
+let ADRESSE_RAPPORTS=S.get("adresse")||"";
+
+async function chargerConfig(){
+  try{
+    const r=await fetch("/config",{cache:"no-store"});
+    if(!r.ok)return;
+    const c=await r.json();
+    if(typeof c.adresse==="string"&&c.adresse!==ADRESSE_RAPPORTS){
+      ADRESSE_RAPPORTS=c.adresse; S.set("adresse",c.adresse);
+    }
+  }catch(e){}
+}
 
 /* ═══════════ Journal des pannes ═══════════
    Un technicien qui voit une erreur recommence, puis abandonne, et personne
@@ -760,6 +787,40 @@ function nouveau(type){
   dossiers.push(courant);sauver();ouvrirDossier();
 }
 function ouvrir(id){courant=dossiers.find(d=>d.id===id);if(courant)ouvrirDossier();}
+/* « PDF clôturé » : un rapport signé et envoyé ne se modifie plus en silence.
+   Il reste consultable, son PDF reste regenerable, et on peut le dupliquer pour
+   repartir d'une copie modifiable. Rien n'est perdu, rien n'est falsifiable. */
+const verrouille=d=>!!d&&d.etat==="envoye";
+
+function appliquerVerrou(){
+  const v=verrouille(courant);
+  document.getElementById("bandeau-verrou").hidden=!v;
+  for(const e of document.querySelectorAll("#e-releve input,#e-releve textarea,"
+      +"#e-releve select,#e-salle input,#e-salle textarea,#e-salle select")){
+    e.disabled=v;
+  }
+  document.querySelectorAll("#e-releve .ecran-actions,#e-salle .barre")
+    .forEach(x=>x.classList.toggle("verrouille",v));
+  /* Renvoyer reste permis : le PDF est identique, et un premier envoi a pu
+     echouer. Mais le mot « terminer » n'a plus de sens sur un rapport clos. */
+  const bf=document.getElementById("btn-fin-releve");
+  if(bf)bf.textContent=v?"Renvoyer le rapport":"Terminer et envoyer";
+}
+
+function dupliquerDossier(){
+  if(!courant)return;
+  const c=JSON.parse(JSON.stringify(courant));
+  c.id=uid(); c.etat="brouillon"; c.archive=false;
+  c.date=new Date().toLocaleDateString("fr-FR");
+  c.signTech=""; c.signClient=""; c.nomClient="";
+  c.chantier=(c.chantier||"Sans nom")+" (corrigé)";
+  /* Les photos restent dans l'original : les recopier doublerait la place
+     occupee sur un telephone qui n'en a pas tant que ca. */
+  (c.salles||[]).forEach(s=>{s.photos=[];s.guidees={}});
+  dossiers.push(c); courant=c; sauver(); ouvrirDossier();
+  toast("Copie modifiable créée — les photos sont à reprendre");
+}
+
 function ouvrirDossier(){
   const interv=courant.type==="intervention";
   document.getElementById("r-chantier").value=courant.chantier;
@@ -784,6 +845,7 @@ function ouvrirDossier(){
   }
   rendreSalles();
   document.getElementById("btn-photos").hidden=!photosDuDossier().length;
+  appliquerVerrou();
   montrer("e-releve");
 }
 function allerAccueil(){rendreAccueil()}
@@ -867,7 +929,7 @@ function ouvrirSalle(i){
   document.getElementById("s-notes").placeholder=interv
     ?"Ce qui a bloqué, ce qu'il faut signaler au chef…"
     :"Existant, contraintes, arrivées, ce qu'il faut prévoir…";
-  rendrePhotos("salle",s);montrer("e-salle");
+  rendrePhotos("salle",s);appliquerVerrou();montrer("e-salle");
   if(!s.nom)setTimeout(()=>document.getElementById("s-nom").focus(),250);
 }
 function majSalle(){
@@ -878,7 +940,7 @@ function majSalle(){
 }
 function fermerSalle(){rendreSalles();
   document.getElementById("btn-photos").hidden=!photosDuDossier().length;
-  montrer("e-releve")}
+  appliquerVerrou();montrer("e-releve")}
 function supprimerSalle(){
   if(!confirm("Supprimer cette salle et ses photos ?"))return;
   toutesPhotos(courant.salles[salleCourante]).forEach(delPhoto);
@@ -1549,7 +1611,7 @@ function bandeauInstallation(){
   if(ios&&!installee&&!localStorage.getItem("vuInstall"))
     setTimeout(()=>document.getElementById("installer").hidden=false,2500);
 }
-ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();viderJournal();
+ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();viderJournal();chargerConfig();
   if(!auteur)setTimeout(()=>document.getElementById("auteur").focus(),300);});
 /* Depuis la racine, et pas depuis /static/ : la portée d'un worker est le
    dossier d'où il est servi, et /static/ ne couvre pas /chantier. */

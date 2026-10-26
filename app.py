@@ -52,6 +52,21 @@ def chantier():
     return render_template("chantier.html")
 
 
+@app.route("/config")
+def config():
+    """Reglages partages par tous les telephones.
+
+    L'adresse de destination ne peut pas vivre dans le telephone : il faudrait
+    la saisir trente fois, et la changer trente fois. Elle ne peut pas non plus
+    etre figee dans le code, sinon il faut redeployer a chaque correction.
+
+    Elle vit donc dans une variable d'environnement, modifiable depuis le
+    tableau de bord de l'hebergeur en quelques secondes, sans redeploiement et
+    sans toucher au code. Ce n'est pas un secret : c'est un reglage.
+    """
+    return {"adresse": os.environ.get("ADRESSE_RAPPORTS", "")}
+
+
 @app.route("/journal", methods=["POST"])
 def journal():
     """Recueille les erreurs survenues sur les telephones.

@@ -15,5 +15,9 @@ services:
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     healthCheckPath: /ping
     autoDeploy: true
-    # Aucune clé, aucun identifiant : c'est la raison d'être de ce service.
-    envVars: []
+    # Aucun secret. ADRESSE_RAPPORTS n'en est pas un : c'est l'adresse à qui
+    # les rapports sont envoyés, modifiable depuis le tableau de bord sans
+    # redéploiement. Laissée vide, le bloc d'envoi reste masqué dans l'app.
+    envVars:
+      - key: ADRESSE_RAPPORTS
+        sync: false
