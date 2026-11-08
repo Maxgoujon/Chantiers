@@ -60,11 +60,14 @@ def config():
     la saisir trente fois, et la changer trente fois. Elle ne peut pas non plus
     etre figee dans le code, sinon il faut redeployer a chaque correction.
 
-    Elle vit donc dans une variable d'environnement, modifiable depuis le
-    tableau de bord de l'hebergeur en quelques secondes, sans redeploiement et
-    sans toucher au code. Ce n'est pas un secret : c'est un reglage.
+    L'adresse donnee par le client le 27 octobre sert de valeur par defaut :
+    l'application fonctionne sans configuration. La variable d'environnement
+    reste prioritaire, modifiable depuis le tableau de bord de l'hebergeur en
+    quelques secondes, sans redeploiement. Ce n'est pas un secret, c'est un
+    reglage.
     """
-    return {"adresse": os.environ.get("ADRESSE_RAPPORTS", "")}
+    return {"adresse": os.environ.get("ADRESSE_RAPPORTS")
+            or "rapports@lecentraltechnique.fr"}
 
 
 @app.route("/journal", methods=["POST"])
