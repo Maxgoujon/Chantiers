@@ -352,10 +352,10 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
     </div>
 
     <div class="bloc">
-      <div class="champ"><label for="r-chantier">Chantier</label>
-        <input id="r-chantier" placeholder="Tour Trinity — 12e étage" oninput="majDossier()"></div>
-      <div class="champ"><label for="r-client">Société <span id="lbl-societe"></span></label>
-        <input id="r-client" placeholder="Nom de la société" oninput="majDossier()"></div>
+      <div class="champ"><label for="r-chantier">Client final</label>
+        <input id="r-chantier" placeholder="Nom du client chez qui on intervient" oninput="majDossier()"></div>
+      <div class="champ"><label for="r-client">Partenaire</label>
+        <input id="r-client" placeholder="Qui vous a missionnés" oninput="majDossier()"></div>
       <div class="champ" id="champ-adresse"><label for="r-adresse">Adresse</label>
         <input id="r-adresse" placeholder="Adresse du site" oninput="majDossier()"></div>
       <div class="champ" id="champ-contact" hidden><label for="r-contact">Contact sur place</label>
@@ -834,7 +834,6 @@ function ouvrirDossier(){
   document.getElementById("champ-techs").hidden=!interv;
   document.getElementById("bloc-type").hidden=!interv;
   document.getElementById("bloc-journee").hidden=!interv;
-  document.getElementById("lbl-societe").textContent=interv?"(client final)":"";
   document.getElementById("r-contact").value=courant.contact||"";
   document.getElementById("r-techs").value=courant.techs||courant.auteur||"";
   if(interv){
@@ -1046,14 +1045,14 @@ function etapeSuivante(){
 }
 function allerEnvoi(){
   majDossier();
-  if(!courant.chantier.trim()){toast("Indiquez le nom du chantier");return}
+  if(!courant.chantier.trim()){toast("Indiquez le client final");return}
   if(!courant.salles.length){toast("Ajoutez au moins une salle");return}
   document.getElementById("sous-envoi").textContent=courant.chantier;
   const photos=courant.salles.reduce((t,s)=>t+toutesPhotos(s).length,0);
   document.getElementById("recap-envoi").innerHTML=
     `<b style="font-size:18px">${echap(courant.chantier)}</b><br>
      <span style="color:var(--gris)">${courant.type==="releve"?"Relevé":"Compte rendu d'intervention"}
-     · ${echap(courant.client||"client non précisé")}<br>
+     · ${echap(courant.client||"partenaire non précisé")}<br>
      ${courant.salles.length} salle(s) · ${photos} photo(s)
      · ${courant.date} · ${echap(courant.auteur)}</span>`;
   majPoids();
@@ -1344,7 +1343,7 @@ function toutesPhotos(s){
 }
 function photosDuDossier(){
   /* [{id, nom}] — nommées pour être lisibles une fois sorties de l'app. */
-  const base=sansAccent(courant.chantier)||"chantier";
+  const base=sansAccent(courant.chantier)||"client";
   const out=[];
   courant.salles.forEach((s,i)=>{
     const sn=sansAccent(s.nom)||("Salle"+(i+1));
