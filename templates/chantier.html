@@ -218,6 +218,11 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
   text-transform:none;letter-spacing:0;margin:0;cursor:pointer;
 }
 .ajout-photo:active{background:var(--sunk)}
+/* L'appareil photo reste a un seul geste : la galerie est a cote, pas dans un
+   menu. Un technicien avec des gants ne navigue pas dans un menu. */
+.duo-photo{display:flex;gap:8px;margin-top:10px}
+.duo-photo .ajout-photo{margin:0}
+.duo-photo .galerie{flex:none;width:112px;font-weight:500;color:var(--gris);font-size:14px}
 
 /* ─────────── photos guidées ─────────── */
 .guidee{display:flex;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line-soft)}
@@ -429,11 +434,18 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
     <div class="bloc">
       <label id="lbl-photos">Photos</label>
       <div class="photos" id="photos-salle"></div>
-      <label class="ajout-photo" style="margin-top:10px;display:flex">
-        <span id="lbl-ajout">Prendre des photos</span>
-        <input type="file" accept="image/*" capture="environment" multiple hidden
-               onchange="ajouterPhotos(this,'salle')">
-      </label>
+      <div class="duo-photo">
+        <label class="ajout-photo">
+          <span id="lbl-ajout">Prendre des photos</span>
+          <input type="file" accept="image/*" capture="environment" multiple hidden
+                 onchange="ajouterPhotos(this,'salle')">
+        </label>
+        <label class="ajout-photo galerie">
+          <span>Galerie</span>
+          <input type="file" accept="image/*" multiple hidden
+                 onchange="ajouterPhotos(this,'salle')">
+        </label>
+      </div>
     </div>
 
     <div class="bloc" id="bloc-sn">
@@ -442,11 +454,17 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
         Les étiquettes des appareils posés. Nomme chacune, sinon on se retrouve
         dans six mois avec un numéro et sans savoir de quel appareil il vient.</small>
       <div id="liste-sn"></div>
-      <label class="ajout-photo" style="margin-top:10px;display:flex">
-        <span>Photographier une étiquette</span>
-        <input type="file" accept="image/*" capture="environment" multiple hidden
-               onchange="ajouterSN(this)">
-      </label>
+      <div class="duo-photo">
+        <label class="ajout-photo">
+          <span>Photographier une étiquette</span>
+          <input type="file" accept="image/*" capture="environment" multiple hidden
+                 onchange="ajouterSN(this)">
+        </label>
+        <label class="ajout-photo galerie">
+          <span>Galerie</span>
+          <input type="file" accept="image/*" multiple hidden onchange="ajouterSN(this)">
+        </label>
+      </div>
     </div>
 
     <div class="bloc" id="bloc-fait" hidden>
@@ -971,14 +989,22 @@ async function rendreGuidees(s){
       const b=await getPhoto(id);
       if(b){const i=document.createElement("img");i.src=URL.createObjectURL(b);d.append(i)}
       const r=document.createElement("button");r.className="refaire";r.textContent="Refaire";
-      r.onclick=()=>remplacerGuidee(cle);
-      d.append(r);
+      r.onclick=()=>remplacerGuidee(cle,true);
+      const g=document.createElement("button");g.className="refaire";g.textContent="Galerie";
+      g.onclick=()=>remplacerGuidee(cle,false);
+      d.append(r,g);
     }else{
       const l=document.createElement("label");l.className="prendre";l.textContent="Prendre";
       const inp=document.createElement("input");
       inp.type="file";inp.accept="image/*";inp.capture="environment";inp.hidden=true;
       inp.onchange=()=>capterGuidee(cle,inp);
-      l.append(inp);d.append(l);
+      l.append(inp);
+      const g=document.createElement("label");g.className="refaire";g.textContent="Galerie";
+      const inp2=document.createElement("input");
+      inp2.type="file";inp2.accept="image/*";inp2.hidden=true;
+      inp2.onchange=()=>capterGuidee(cle,inp2);
+      g.append(inp2);
+      d.append(l,g);
     }
     el.append(d);
   }
@@ -994,10 +1020,10 @@ async function capterGuidee(cle,input){
     s.guidees[cle]=id; sauver(); await rendreGuidees(s); rendreSalles();
   }catch(e){toast("Photo illisible")}
 }
-function remplacerGuidee(cle){
-  const s=courant.salles[salleCourante];
+function remplacerGuidee(cle,appareil){
   const inp=document.createElement("input");
-  inp.type="file";inp.accept="image/*";inp.capture="environment";
+  inp.type="file";inp.accept="image/*";
+  if(appareil)inp.capture="environment";
   inp.onchange=()=>capterGuidee(cle,inp); inp.click();
 }
 
