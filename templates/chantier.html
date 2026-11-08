@@ -43,6 +43,17 @@
 /* Un sélecteur d'identifiant avec display:flex l'emporte sur l'attribut hidden :
    sans ce !important, masquer un bloc par « hidden » ne fait rien du tout. */
 [hidden]{display:none!important}
+/* Une etiquette se lit : la vignette est plus grande que celles des photos
+   d'ambiance, et la designation tient sur la meme ligne. */
+.sn-ligne{display:flex;align-items:center;gap:10px;padding:8px 0;
+  border-bottom:1px solid var(--ligne)}
+.sn-ligne:last-child{border-bottom:0}
+.sn-ligne img{width:72px;height:54px;object-fit:cover;border-radius:6px;
+  border:1px solid var(--ligne);flex:none;cursor:zoom-in}
+.sn-ligne input{flex:1;min-width:0}
+.sn-jeter{flex:none;width:34px;height:34px;border:0;background:none;
+  color:var(--gris);font-size:20px;cursor:pointer;border-radius:6px}
+.sn-jeter:active{background:#F6E2DE;color:var(--alerte)}
 .verrou{background:#FFF5E6;border-left:3px solid var(--accent,#9A6410)}
 .verrou b{display:block;margin-bottom:4px}
 .verrou span{display:block;font-size:13.5px;color:var(--gris);line-height:1.5}
@@ -422,6 +433,19 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
         <span id="lbl-ajout">Prendre des photos</span>
         <input type="file" accept="image/*" capture="environment" multiple hidden
                onchange="ajouterPhotos(this,'salle')">
+      </label>
+    </div>
+
+    <div class="bloc" id="bloc-sn">
+      <label>Photos S/N des équipements</label>
+      <small style="display:block;color:var(--gris);font-size:12.5px;margin:-2px 0 10px;line-height:1.45">
+        Les étiquettes des appareils posés. Nomme chacune, sinon on se retrouve
+        dans six mois avec un numéro et sans savoir de quel appareil il vient.</small>
+      <div id="liste-sn"></div>
+      <label class="ajout-photo" style="margin-top:10px;display:flex">
+        <span>Photographier une étiquette</span>
+        <input type="file" accept="image/*" capture="environment" multiple hidden
+               onchange="ajouterSN(this)">
       </label>
     </div>
 
@@ -907,7 +931,7 @@ function ouvrirSalle(i){
   document.getElementById("s-notes").placeholder=interv
     ?"Ce qui a bloqué, ce qu'il faut signaler au chef…"
     :"Existant, contraintes, arrivées, ce qu'il faut prévoir…";
-  rendrePhotos("salle",s);appliquerVerrou();montrer("e-salle");
+  rendrePhotos("salle",s);rendreSN();appliquerVerrou();montrer("e-salle");
   if(!s.nom)setTimeout(()=>document.getElementById("s-nom").focus(),250);
 }
 function majSalle(){
@@ -978,13 +1002,16 @@ function remplacerGuidee(cle){
 }
 
 /* ═══════════ Photos ═══════════ */
-async function compresser(file){
+/* Une photo d'ambiance supporte 0,72 ; une etiquette de numero de serie non :
+   la compression brouille le texte a fort contraste, et un S/N illisible ne
+   sert a rien. On monte la qualite pour celles-la. */
+async function compresser(file,qualite){
   const img=await createImageBitmap(file);
   const max=1600,r=Math.min(1,max/Math.max(img.width,img.height));
   const c=document.createElement("canvas");
   c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);
   c.getContext("2d").drawImage(img,0,0,c.width,c.height);
-  return new Promise(ok=>c.toBlob(ok,"image/jpeg",.72));
+  return new Promise(ok=>c.toBlob(ok,"image/jpeg",qualite||.72));
 }
 async function ajouterPhotos(input,cible){
   const cible_obj=cible==="salle"?courant.salles[salleCourante]:courant;
@@ -1001,6 +1028,47 @@ async function ajouterPhotos(input,cible){
   }
   if(cible==="salle")rendreSalles();
   toast("Photos ajoutées");
+}
+
+/* ═══════════ Numéros de série ═══════════
+   Les etiquettes des equipements poses. Chacune porte sa designation, sinon
+   on se retrouve six mois plus tard avec une suite de chiffres sans savoir
+   de quel appareil elle vient. */
+async function ajouterSN(input){
+  const s=courant.salles[salleCourante]; if(!s)return;
+  const fichiers=[...input.files]; input.value="";
+  if(!fichiers.length)return;
+  toast(fichiers.length+" étiquette(s) en cours…");
+  for(const f of fichiers){
+    try{
+      const blob=await compresser(f,.85);   // lisibilite avant legerete
+      const id=uid(); await putPhoto(id,blob);
+      (s.sn=s.sn||[]).push({id,titre:""});
+      sauver(); await rendreSN();
+    }catch(e){toast("Photo illisible, passée")}
+  }
+  rendreSalles();
+}
+
+async function rendreSN(){
+  const s=courant&&courant.salles[salleCourante];
+  const el=document.getElementById("liste-sn"); if(!el||!s)return;
+  el.innerHTML="";
+  for(const [i,e] of (s.sn||[]).entries()){
+    const b=await getPhoto(e.id); if(!b)continue;
+    const d=document.createElement("div"); d.className="sn-ligne";
+    const img=document.createElement("img"); img.src=URL.createObjectURL(b);
+    img.onclick=()=>window.open(img.src,"_blank");
+    const ch=document.createElement("input");
+    ch.placeholder="Quel équipement ?"; ch.value=e.titre||"";
+    ch.disabled=verrouille(courant);
+    ch.oninput=()=>{e.titre=ch.value;sauver()};
+    const x=document.createElement("button"); x.className="sn-jeter"; x.textContent="×";
+    x.onclick=async()=>{
+      s.sn.splice(i,1); await delPhoto(e.id); sauver(); await rendreSN(); rendreSalles();
+    };
+    d.append(img,ch,x); el.append(d);
+  }
 }
 async function rendrePhotos(cible,obj){
   const el=document.getElementById(cible==="salle"?"photos-salle":"photos-interv");
@@ -1157,17 +1225,18 @@ async function construirePDF(){
   y=yMax+3; filet(y); y+=9;
 
   /* ── Les salles ───────────────────────────────────────────────── */
-  const photosGrille=async(ids,legendes)=>{
+  const photosGrille=async(ids,legendes,colonnes)=>{
     if(!ids.length)return;
-    /* Toujours trois colonnes : sinon une photo isolée occupe toute la largeur
-       de la page et déséquilibre le document. */
-    const n=3, cw=(W-6*(n-1))/n, ch=cw*0.74;
+    /* Trois colonnes par defaut : une photo isolee en pleine largeur
+       desequilibrerait la page. Deux pour les etiquettes de numero de serie,
+       qui doivent rester dechiffrables une fois imprimees. */
+    const n=colonnes||3, cw=(W-6*(n-1))/n, ch=cw*0.74;
     for(let i=0;i<ids.length;i++){
       const col=i%n;
       if(col===0)saut(ch+(legendes?10:6));
       const im=await imagePourPdf(ids[i]); if(!im)continue;
       const x0=M+col*(cw+6);
-      if(legendes&&legendes[i])caps(legendes[i],x0,y,{taille:6.3,espace:.45,coul:SIGNAL});
+      if(legendes&&legendes[i])caps(legendes[i],x0,y,{taille:n===2?7.4:6.3,espace:.45,coul:SIGNAL});
       const yImg=y+(legendes&&legendes[i]?2.6:0);
       const r=Math.min(cw/im.W,ch/im.H), w=im.W*r, h=im.H*r;
       try{doc.addImage(im.url,"JPEG",x0+(cw-w)/2,yImg,w,h,undefined,"FAST")}catch(e){}
@@ -1205,6 +1274,13 @@ async function construirePDF(){
       const cles=GUIDEES.filter(([c])=>(s.guidees||{})[c]);
       await photosGrille(cles.map(([c])=>s.guidees[c]), cles.map(([,t])=>t));
       if((s.photos||[]).length)await photosGrille(s.photos,null);
+      if((s.sn||[]).length){
+        /* Deux colonnes : un numero de serie imprime sur un tiers de page ne
+           se relit pas. C'est la seule raison d'etre de ces photos. */
+        saut(14); caps("Numéros de série",M,y,{taille:6.8,espace:.5,coul:FAINT}); y+=6;
+        await photosGrille(s.sn.map(e=>e.id),
+                           s.sn.map(e=>e.titre||"Équipement"), 2);
+      }
     }else if((s.photos||[]).length){
       await photosGrille(s.photos,null);
     }
@@ -1315,7 +1391,8 @@ function sansAccent(t){
 }
 function toutesPhotos(s){
   const g=Object.values(s.guidees||{}).filter(Boolean);
-  return g.concat(s.photos||[]);
+  const sn=(s.sn||[]).map(e=>e.id);
+  return g.concat(s.photos||[],sn);
 }
 function photosDuDossier(){
   /* [{id, nom}] — nommées pour être lisibles une fois sorties de l'app. */
