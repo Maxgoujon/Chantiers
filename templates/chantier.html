@@ -368,14 +368,6 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
       <div class="bloc">
         <label>Type d'intervention</label>
         <div class="puces" id="puces-type"></div>
-        <div class="trio" style="margin-top:14px">
-          <div><label for="i-arrivee" style="font-size:11.5px">Arrivée</label>
-            <input id="i-arrivee" type="time" oninput="majDossier()"></div>
-          <div><label for="i-depart" style="font-size:11.5px">Départ</label>
-            <input id="i-depart" type="time" oninput="majDossier()"></div>
-          <div><label style="font-size:11.5px">Durée</label>
-            <input id="i-duree-calc" readonly style="background:var(--fond);color:var(--gris)"></div>
-        </div>
       </div>
     </div>
 
@@ -780,8 +772,8 @@ function nouveau(type){
   const h=new Date().toTimeString().slice(0,5);
   courant={id:uid(),type,auteur,techs:auteur,chantier:"",client:"",adresse:"",contact:"",
     date:new Date().toLocaleDateString("fr-FR"),etat:"brouillon",
-    typesInterv:[],arrivee:type==="intervention"?h:"",depart:"",controles:{},
-    salles:[],photos:[],fait:"",restant:"",duree:"",
+    typesInterv:[],controles:{},
+    salles:[],photos:[],fait:"",restant:"",
     materiels:{autres:""},note:0,
     signTech:"",signClient:"",nomClient:""};
   dossiers.push(courant);sauver();ouvrirDossier();
@@ -837,10 +829,8 @@ function ouvrirDossier(){
   document.getElementById("r-contact").value=courant.contact||"";
   document.getElementById("r-techs").value=courant.techs||courant.auteur||"";
   if(interv){
-    document.getElementById("i-arrivee").value=courant.arrivee||"";
-    document.getElementById("i-depart").value=courant.depart||"";
     document.getElementById("i-restant").value=courant.restant||"";
-    rendreTypes();rendreControles();majDuree();
+    rendreTypes();rendreControles();
   }
   rendreSalles();
   document.getElementById("btn-photos").hidden=!photosDuDossier().length;
@@ -858,10 +848,7 @@ function majDossier(){
   courant.contact=document.getElementById("r-contact").value;
   if(courant.type==="intervention"){
     courant.techs=document.getElementById("r-techs").value;
-    courant.arrivee=document.getElementById("i-arrivee").value;
-    courant.depart=document.getElementById("i-depart").value;
     courant.restant=document.getElementById("i-restant").value;
-    majDuree();
   }
   sauver();
 }
@@ -883,14 +870,6 @@ function rendreControles(){
 }
 function basculeControle(c,v){
   courant.controles=courant.controles||{}; courant.controles[c]=v; sauver();
-}
-function majDuree(){
-  const a=courant.arrivee,d=courant.depart,el=document.getElementById("i-duree-calc");
-  if(!a||!d){courant.duree="";if(el)el.value="";return}
-  const [ha,ma]=a.split(":").map(Number),[hd,md]=d.split(":").map(Number);
-  let m=(hd*60+md)-(ha*60+ma); if(m<0)m+=1440;
-  courant.duree=`${Math.floor(m/60)} h${m%60?" "+String(m%60).padStart(2,"0"):""}`;
-  if(el)el.value=courant.duree;
 }
 
 /* ═══════════ Salles ═══════════ */
@@ -1157,9 +1136,6 @@ async function construirePDF(){
     ["Contact sur place",courant.contact],
   ];
   if(interv){
-    const h=[courant.arrivee&&"Arrivée "+courant.arrivee,
-             courant.depart&&"Départ "+courant.depart].filter(Boolean).join("  ·  ");
-    lignes.push(["Horaires",h+(courant.duree?"  ·  "+courant.duree:"")]);
     lignes.push(["Nature",(courant.typesInterv||[]).join(", ")]);
   }
   const colL=W/2-4;
