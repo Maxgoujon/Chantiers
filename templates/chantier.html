@@ -244,17 +244,6 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
 .guidee .refaire{background:none;color:var(--gris);font-size:13px;text-decoration:underline;
   text-underline-offset:3px;padding:4px;flex:none}
 
-/* ─────────── note du client ─────────── */
-/* Des cibles de 44 px : on tape dessus avec un gant, debout dans un couloir. */
-.etoiles{display:flex;gap:6px}
-.etoiles button{
-  flex:1;height:52px;padding:0;background:var(--surface);
-  border:1px solid var(--ligne);border-radius:var(--r);
-  font-size:26px;line-height:1;color:var(--faint);
-  text-transform:none;letter-spacing:0;transition:color .12s,border-color .12s;
-}
-.etoiles button.pleine{color:#C8901A;border-color:#C8901A}
-
 /* ─────────── matériels fournis ─────────── */
 .mat{display:flex;align-items:center;gap:8px;margin-bottom:9px}
 .mat>b{flex:0 0 58px;font-size:14px;font-weight:600}
@@ -562,12 +551,6 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
       </div>
     </div>
     <div class="bloc">
-      <label>Satisfaction du client</label>
-      <div class="etoiles" id="etoiles"></div>
-      <small id="note-txt" style="color:var(--gris);font-size:13px;display:block;margin-top:6px">
-        Demande au client comment il juge l'intervention.</small>
-    </div>
-    <div class="bloc">
       <label>Signature du client</label>
       <div class="champ" style="margin-bottom:10px">
         <input id="s-nomclient" placeholder="Nom du signataire" oninput="majSign()">
@@ -816,7 +799,7 @@ function nouveau(type){
     date:new Date().toLocaleDateString("fr-FR"),etat:"brouillon",
     typesInterv:[],controles:{},
     salles:[],photos:[],fait:"",restant:"",
-    materiels:{autres:""},note:0,
+    materiels:{autres:""},
     signTech:"",signClient:"",nomClient:""};
   dossiers.push(courant);sauver();ouvrirDossier();
 }
@@ -1323,8 +1306,7 @@ async function construirePDF(){
     const hSign=(courant.signTech||courant.signClient)?42:0;
     const lignesMat=materielsRemplis();
     const hMat=lignesMat.length?lignesMat.length*4.6+6:0;
-    const hNote=courant.note?10:0;
-    saut(16+CONTROLES.length*6.4+hReserves+hMat+hNote+hSign);
+    saut(16+CONTROLES.length*6.4+hReserves+hMat+hSign);
     filet(y,M,L-M,ENCRE,.7); y+=7;
     caps("Avant de partir",M,y,{taille:8.5,espace:1,coul:ENCRE}); y+=7;
     for(const [c,lib] of CONTROLES){
@@ -1353,28 +1335,6 @@ async function construirePDF(){
       caps("Matériel",M,y,{taille:6.8,espace:.5,coul:FAINT});
       txt(lignesMat,M+gouttiere("Matériel"),y,{taille:9.5});
       y+=lignesMat.length*4.6+6;
-    }
-    if(courant.note){
-      /* ★ n'existe pas dans WinAnsi : jsPDF le rendrait en charabia.
-         On trace donc les étoiles en vectoriel. */
-      const etoile=(cx,cy,R,plein)=>{
-        const r=R*.382, pts=[];
-        for(let k=0;k<10;k++){
-          const a=(-90+k*36)*Math.PI/180;
-          const rad=(k%2)?r:R;
-          pts.push([cx+rad*Math.cos(a), cy+rad*Math.sin(a)]);
-        }
-        const d=[];
-        for(let k=1;k<10;k++)d.push([pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]]);
-        if(plein)doc.setFillColor(200,144,26);
-        else{doc.setDrawColor(...FILET);doc.setLineWidth(.3)}
-        doc.lines(d, pts[0][0], pts[0][1], [1,1], plein?"F":"S", true);
-      };
-      caps("Satisfaction",M,y,{taille:6.8,espace:.5,coul:FAINT});
-      const gN=M+gouttiere("Satisfaction")+2;
-      for(let i=1;i<=5;i++)etoile(gN+(i-1)*7, y-1.4, 2.6, i<=courant.note);
-      txt(courant.note+"/5",gN+5*7-1,y,{taille:8.5,coul:GRIS});
-      y+=10;
     }
     if(courant.signTech||courant.signClient){
       const cw=(W-10)/2, hb=26;
@@ -1561,28 +1521,12 @@ function materielsRemplis(){
   return l;
 }
 
-/* ═══════════ Note du client ═══════════ */
-const NOTE_TXT=["Demande au client comment il juge l'intervention.",
-  "Très insatisfait","Insatisfait","Correct","Satisfait","Très satisfait"];
-function rendreNote(){
-  const n=courant.note||0;
-  document.getElementById("etoiles").innerHTML=[1,2,3,4,5].map(i=>
-    `<button type="button" class="${i<=n?"pleine":""}" aria-label="${i} sur 5"
-       onclick="setNote(${i})">${i<=n?"★":"☆"}</button>`).join("");
-  document.getElementById("note-txt").textContent=NOTE_TXT[n];
-}
-function setNote(i){
-  /* Retaper l'étoile courante efface la note : le client peut refuser de noter. */
-  courant.note=(courant.note===i)?0:i; sauver(); rendreNote();
-}
-
 function majSign(){
   if(!courant)return;courant.nomClient=document.getElementById("s-nomclient").value;sauver();}
 function allerSignature(){
   document.getElementById("sous-sign").textContent=courant.chantier||"";
   document.getElementById("nom-tech").textContent=courant.techs||courant.auteur||"";
   document.getElementById("s-nomclient").value=courant.nomClient||"";
-  rendreNote();
   montrer("e-signature");
   setTimeout(()=>{creerPad("tech","pad-tech");creerPad("client","pad-client");},60);
 }
