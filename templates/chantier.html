@@ -617,7 +617,7 @@ const poidsStockage=()=>{let n=0;try{for(const k in localStorage)
 let dossiers=S.get("dossiers")||[];
 let auteur=S.get("auteur")||"";
 let courant=null, salleCourante=null;
-function sauver(){S.set("dossiers",dossiers)}
+function sauver(){S.set("dossiers",dossiers);oublierPdf()}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 
 /* ═══════════ Écrans ═══════════ */
@@ -735,7 +735,7 @@ async function chargerConfig(){
    Ce qui part : ce qu'on faisait, le message d'erreur, la version de l'app et
    l'appareil. Rien d'autre. Ni nom de chantier, ni client, ni adresse, ni
    photo — ce serveur ne doit jamais voir les affaires du client. */
-const VERSION_APP="2026-10-25";
+const VERSION_APP="2026-11-15";
 
 function signaler(quoi,err){
   try{
@@ -1121,6 +1121,7 @@ function allerEnvoi(){
   if(ADRESSE_RAPPORTS)document.getElementById("adresse-rapports").textContent=ADRESSE_RAPPORTS;
   if(interv)rendreMateriels();
   montrer("e-envoi");
+  preparerPdf();   // pret avant que le doigt ne se pose
 }
 
 async function imagePourPdf(id){
@@ -1399,21 +1400,38 @@ async function blobsDuDossier(){
   }
   return out;
 }
+let _blobsPrets=null, _blobsPour=null;
+
 async function recupererPhotos(){
-  const fichiers=await blobsDuDossier();
-  if(!fichiers.length){toast("Aucune photo dans ce dossier");return}
-  /* Le partage iOS ouvre Photos, Fichiers, Mail, OneDrive… c'est ce qui
-     ressemble le plus à « je récupère mes photos ». */
-  if(navigator.canShare&&navigator.canShare({files:fichiers})){
-    try{await navigator.share({files:fichiers,title:courant.chantier||"Photos"});return}
-    catch(e){if(e.name==="AbortError")return}
+  if(!courant)return;
+  const sig=signatureDossier();
+
+  /* Deja chargees : on partage dans la foulee du tap. Charger d'abord puis
+     partager ferait expirer l'activation utilisateur et le partage serait
+     refuse -- c'est ce qui bloquait les dossiers bien fournis en photos. */
+  if(_blobsPrets&&_blobsPour===sig){
+    const fichiers=_blobsPrets;
+    if(navigator.canShare&&navigator.canShare({files:fichiers})){
+      try{ await navigator.share({files:fichiers,title:courant.chantier||"Photos"}); return }
+      catch(e){ if(e.name==="AbortError")return; signaler("partage photos",e); }
+    }
+    for(const fic of fichiers){
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(fic);a.download=fic.name;a.click();
+      await new Promise(r=>setTimeout(r,180));URL.revokeObjectURL(a.href);
+    }
+    toast(fichiers.length+" photo(s) enregistrée(s)");
+    return;
   }
-  for(const f of fichiers){                       /* repli : téléchargement un à un */
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(f);a.download=f.name;a.click();
-    await new Promise(r=>setTimeout(r,180));URL.revokeObjectURL(a.href);
-  }
-  toast(fichiers.length+" photo(s) enregistrée(s)");
+
+  const btn=document.activeElement;
+  if(btn&&btn.tagName==="BUTTON"){btn.disabled=true;btn.textContent="Préparation…";}
+  try{
+    _blobsPrets=await blobsDuDossier(); _blobsPour=sig;
+  }catch(e){ signaler("lecture photos",e); }
+  if(btn&&btn.tagName==="BUTTON"){btn.disabled=false;btn.textContent="Les récupérer sur le téléphone";}
+  if(!_blobsPrets||!_blobsPrets.length){toast("Aucune photo dans ce dossier");return}
+  toast(_blobsPrets.length+" photo(s) prêtes — appuie encore");
 }
 const PHOTOS_ALERTE=40;   /* au-delà, le PDF devient lourd pour une messagerie */
 
@@ -1528,33 +1546,93 @@ function allerSignature(){
   document.getElementById("nom-tech").textContent=courant.techs||courant.auteur||"";
   document.getElementById("s-nomclient").value=courant.nomClient||"";
   montrer("e-signature");
+  preparerPdf();
   setTimeout(()=>{creerPad("tech","pad-tech");creerPad("client","pad-client");},60);
 }
 
 /* ═══════════ Repli : la messagerie du technicien ═══════════ */
-async function envoyerDepuisTelephone(){
-  /* Tant qu'aucun domaine n'est vérifié, le serveur ne peut écrire à personne
-     d'autre qu'au titulaire du compte. Ce chemin-là ne dépend de rien : le PDF
-     part de la boîte du technicien, et le chef peut lui répondre directement. */
-  const btn=document.querySelector(".ecran.actif .barre .gros");
-  if(btn){btn.disabled=true;btn.textContent="Préparation du PDF…";}
-  try{
-    const pdf=await construirePDF();
-    const nom=`${courant.type==="releve"?"Releve":"CR"}_${sansAccent(courant.chantier)||"chantier"}`
-      +`_${courant.date.replace(/\//g,"-")}.pdf`;
-    const f=new File([pdf.output("blob")],nom,{type:"application/pdf"});
-    const titre=(courant.type==="releve"?"Relevé de site":"Compte rendu")+" — "+(courant.chantier||"");
-    if(navigator.canShare&&navigator.canShare({files:[f]})){
-      await navigator.share({files:[f],title:titre,text:titre});
-      courant.etat="envoye";sauver();toast("Envoyé");rendreAccueil();
-    }else{
-      const a=document.createElement("a");a.href=URL.createObjectURL(f);a.download=nom;a.click();
-      toast("PDF enregistré, à joindre à ton mail");
-    }
-  }catch(e){
-    if(e.name!=="AbortError"){ signaler("envoi PDF",e); toast("Impossible : "+e.message); }
+/* ═══════════ Le PDF doit etre pret AVANT le doigt ═══════════
+   navigator.share() exige une activation utilisateur recente -- de l'ordre de
+   cinq secondes apres le tap. Fabriquer le PDF d'abord et partager ensuite
+   marche tant qu'il n'y a pas de photos, et echoue des qu'il y en a : sur un
+   telephone, vingt photos depassent le delai et le partage est refuse.
+   On prepare donc des l'arrivee sur l'ecran, et le tap ne fait que partager. */
+let _pdfPret=null, _pdfPour=null, _pdfEnCours=null;
+
+function oublierPdf(){ _pdfPret=null; _pdfPour=null; _blobsPrets=null; _blobsPour=null; }
+
+function signatureDossier(){
+  if(!courant)return null;
+  const n=(courant.salles||[]).reduce((t,s)=>t+toutesPhotos(s).length,0);
+  return courant.id+"|"+n+"|"+JSON.stringify(courant).length;
+}
+
+async function preparerPdf(){
+  if(!courant)return null;
+  const sig=signatureDossier();
+  if(_pdfPret&&_pdfPour===sig)return _pdfPret;
+  if(_pdfEnCours)return _pdfEnCours;
+  _pdfEnCours=(async()=>{
+    try{
+      const pdf=await construirePDF();
+      if(!pdf)return null;
+      const nom=nomFichierPdf();
+      const fic=new File([pdf.output("blob")],nom,{type:"application/pdf"});
+      _pdfPret={f:fic,nom}; _pdfPour=sig; return _pdfPret;
+    }catch(e){ signaler("preparation PDF",e); return null; }
+    finally{ _pdfEnCours=null; }
+  })();
+  return _pdfEnCours;
+}
+
+function nomFichierPdf(){
+  return (courant.type==="releve"?"Releve":"CR")+"_"
+    +(sansAccent(courant.chantier)||"client")+"_"
+    +courant.date.replace(/\//g,"-")+".pdf";
+}
+
+/* Sans partage de fichier -- ordinateur, navigateur Android qui ne le gere pas --
+   on ouvre le PDF : l'utilisateur l'a sous les yeux et peut l'envoyer lui-meme.
+   Un telechargement silencieux laissait croire qu'il ne s'etait rien passe. */
+function ouvrirPdfARetomber(fic,nom){
+  const url=URL.createObjectURL(fic);
+  const w=window.open(url,"_blank");
+  if(!w){
+    const a=document.createElement("a");a.href=url;a.download=nom;a.click();
+    toast("PDF enregistré dans tes téléchargements");
+  }else{
+    toast("PDF ouvert — utilise Partager pour l'envoyer");
   }
+  courant.etat="envoye";sauver();oublierPdf();
+}
+
+async function envoyerDepuisTelephone(){
+  if(!courant)return;
+  const btn=document.querySelector(".ecran.actif .barre .gros");
+  const sig=signatureDossier();
+  const titre=(courant.type==="releve"?"Relevé de site":"Compte rendu")+" — "+(courant.chantier||"");
+
+  /* Deja pret : on partage dans la foulee du tap, sans rien attendre. */
+  if(_pdfPret&&_pdfPour===sig){
+    const {f:fic,nom}=_pdfPret;
+    if(navigator.canShare&&navigator.canShare({files:[fic]})){
+      try{
+        await navigator.share({files:[fic],title:titre,text:titre});
+        courant.etat="envoye";sauver();toast("Envoyé");oublierPdf();rendreAccueil();
+      }catch(e){ if(e.name!=="AbortError"){signaler("partage PDF",e);toast("Envoi refusé — réessaie")} }
+    }else{
+      ouvrirPdfARetomber(fic,nom);
+    }
+    return;
+  }
+
+  /* Pas encore pret : on le fabrique, puis on demande un second appui. Un
+     partage lance apres cette attente serait refuse par le navigateur. */
+  if(btn){btn.disabled=true;btn.textContent="Préparation du PDF…";}
+  const pret=await preparerPdf();
   if(btn){btn.disabled=false;btn.textContent="Envoyer le rapport";}
+  if(!pret){toast("Le PDF n'a pas pu être fabriqué");return}
+  toast("PDF prêt — appuie encore sur Envoyer");
 }
 
 /* ═══════════ Ménage : un téléphone n'est pas un serveur d'archives ═══════════ */

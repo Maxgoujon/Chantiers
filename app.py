@@ -13,6 +13,7 @@ part par le partage iOS vers le bot WhatsApp du client. Aucune donnée de leurs
 clients ne touche ce serveur — ce qui évite aussi d'en devenir sous-traitant au
 sens du RGPD.
 """
+import collections
 import json
 import os
 import sys
@@ -89,7 +90,20 @@ def journal():
         return "", 204
     propre = {c: str(d.get(c, ""))[:300] for c in ("quoi", "message", "version", "appareil")}
     print("JOURNAL " + json.dumps(propre, ensure_ascii=False), file=sys.stderr, flush=True)
+    DERNIERES.append(propre)
     return "", 204
+
+
+# Les cinquante dernieres pannes, en memoire seulement. Ecrire dans les traces de
+# l'hebergeur ne sert a rien si personne ne peut les lire depuis l'exterieur : on
+# reste bloque a deviner pendant que des gens sont en panne. Rien de personnel
+# n'y figure, la liste blanche ci-dessus s'en charge.
+DERNIERES = collections.deque(maxlen=50)
+
+
+@app.route("/journal/dernieres")
+def journal_dernieres():
+    return {"nombre": len(DERNIERES), "pannes": list(DERNIERES)}
 
 
 @app.route("/chantier-sw.js")
