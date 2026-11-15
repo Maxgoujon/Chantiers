@@ -571,8 +571,8 @@ button{font:inherit;cursor:pointer;border:0;border-radius:var(--r)}
 
 <div id="installer" hidden>
   <b>Ajoute l'app à ton écran d'accueil</b>
-  <span>Partager <b>↑</b> puis « Sur l'écran d'accueil ». Sans ça, ton téléphone peut effacer
-  tes relevés au bout de quelques jours.</span>
+  <span id="installer-txt"></span>
+  <button id="installer-faire" hidden onclick="installerMaintenant()">Installer</button>
   <button onclick="fermerInstallation()">Compris</button>
 </div>
 <div id="toast"></div>
@@ -1705,11 +1705,33 @@ function fermerInstallation(){
   document.getElementById("installer").hidden=true;
   try{localStorage.setItem("vuInstall","1")}catch(e){}
 }
+/* L'app a ete pensee pour iPhone, mais une partie de l'equipe est sur Android.
+   Les deux systemes n'installent pas de la meme facon : iOS passe par la feuille
+   de partage, Android propose une vraie invite que le navigateur nous confie.
+   Jusqu'ici les Android ne voyaient rien du tout. */
+let _inviteInstall=null;
+addEventListener("beforeinstallprompt",e=>{
+  e.preventDefault(); _inviteInstall=e;
+  const b=document.getElementById("installer-faire"); if(b)b.hidden=false;
+});
+
+async function installerMaintenant(){
+  if(!_inviteInstall)return;
+  _inviteInstall.prompt();
+  try{ await _inviteInstall.userChoice; }catch(e){}
+  _inviteInstall=null;
+  fermerInstallation();
+}
+
 function bandeauInstallation(){
   const ios=/iPad|iPhone|iPod/.test(navigator.userAgent);
   const installee=window.navigator.standalone||matchMedia("(display-mode: standalone)").matches;
-  if(ios&&!installee&&!localStorage.getItem("vuInstall"))
-    setTimeout(()=>document.getElementById("installer").hidden=false,2500);
+  if(installee||localStorage.getItem("vuInstall"))return;
+  const txt=document.getElementById("installer-txt");
+  txt.innerHTML=ios
+    ? 'Partager <b>↑</b> puis « Sur l\'écran d\'accueil ». Sans ça, ton téléphone peut effacer tes relevés au bout de quelques jours.'
+    : 'Menu <b>⋮</b> puis « Installer l\'application » — ou le bouton ci-dessous. L\'app marche alors sans réseau, et tes relevés sont à l\'abri.';
+  setTimeout(()=>document.getElementById("installer").hidden=false,2500);
 }
 ouvrirDB().then(()=>{majReseau();rendreAccueil();menage();bandeauInstallation();viderJournal();chargerConfig();
   if(!auteur)setTimeout(()=>document.getElementById("auteur").focus(),300);});
